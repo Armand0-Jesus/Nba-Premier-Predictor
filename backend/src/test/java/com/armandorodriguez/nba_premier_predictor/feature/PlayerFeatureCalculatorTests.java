@@ -39,7 +39,25 @@ class PlayerFeatureCalculatorTests {
                 .containsEntry("opponent_point_differential_avg", 1.5);
     }
 
-    private static PlayerFeatureRow playerRow(long gameId, String gameTime, int points, int rebounds, int assists, int minutes) {
+    @Test
+    void leavesMinutesTrendNullWhenPriorMinutesAreMissing() {
+        List<PlayerFeatureRow> prior = List.of(
+                playerRow(1, "2024-01-01T19:00:00", 10, 4, 3, null),
+                playerRow(2, "2024-01-02T19:00:00", 12, 5, 4, null),
+                playerRow(3, "2024-01-03T19:00:00", 14, 6, 5, null),
+                playerRow(4, "2024-01-05T19:00:00", 20, 7, 6, 30),
+                playerRow(5, "2024-01-06T19:00:00", 22, 8, 7, 32),
+                playerRow(6, "2024-01-08T19:00:00", 24, 9, 8, 34));
+
+        Map<String, Object> features = calculator.calculate(
+                playerRow(7, "2024-01-10T19:00:00", 30, 10, 9, 36),
+                prior,
+                List.of());
+
+        assertThat(features).containsEntry("minutes_trend", null);
+    }
+
+    private static PlayerFeatureRow playerRow(long gameId, String gameTime, int points, int rebounds, int assists, Integer minutes) {
         return new PlayerFeatureRow(
                 gameId,
                 201939L,
@@ -48,7 +66,7 @@ class PlayerFeatureCalculatorTests {
                 2023,
                 LocalDateTime.parse(gameTime),
                 true,
-                BigDecimal.valueOf(minutes),
+                minutes == null ? null : BigDecimal.valueOf(minutes),
                 points,
                 rebounds,
                 assists,

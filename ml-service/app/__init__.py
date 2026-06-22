@@ -1,1 +1,1 @@
-"""NBA Premier Predictor ML service."""
+"""NBA Premier Predictor Machine Learning service."""

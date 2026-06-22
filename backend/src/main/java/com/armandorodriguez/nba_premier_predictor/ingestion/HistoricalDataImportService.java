@@ -39,11 +39,14 @@ public class HistoricalDataImportService {
         Long refreshId = startRefresh();
         try {
             int teams = importTeams(source);
+            Set<Long> validTeamIds = loadExistingIds("teams", "team_id");
             int players = importPlayers(source);
+            Set<Long> validPlayerIds = loadExistingIds("players", "player_id");
             int seasons = importSeasons(source);
-            int games = importGames(source);
-            int teamStats = importTeamStats(source);
-            int playerStats = importPlayerStats(source);
+            int games = importGames(source, validTeamIds);
+            Set<Long> validGameIds = loadExistingIds("games", "game_id");
+            int teamStats = importTeamStats(source, validGameIds, validTeamIds);
+            int playerStats = importPlayerStats(source, validGameIds, validTeamIds, validPlayerIds);
             int total = teams + players + seasons + games + teamStats + playerStats;
             finishRefresh(refreshId, "success", total, null);
             return new ImportResult(teams, players, seasons, games, teamStats, playerStats);
@@ -182,7 +185,7 @@ public class HistoricalDataImportService {
         return seasons.size();
     }
 
-    private int importGames(Path source) throws IOException {
+    private int importGames(Path source, Set<Long> validTeamIds) throws IOException {
         String sql = """
                 insert into games (
                     game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id,
@@ -221,6 +224,11 @@ public class HistoricalDataImportService {
         int[] count = {0};
 
         readCsv(source, "Games.csv", row -> {
+            Long homeTeamId = row.longValue("hometeamId");
+            Long awayTeamId = row.longValue("awayteamId");
+            if (!validTeamIds.contains(homeTeamId) || !validTeamIds.contains(awayTeamId)) {
+                return;
+            }
             LocalDateTime gameDateTime = gameDateTime(row, "gameDateTimeEst");
             LocalDate gameDate = gameDate(row);
             batch.add(new Object[] {
@@ -228,8 +236,8 @@ public class HistoricalDataImportService {
                     seasonStartYear(gameDate),
                     timestamp(gameDateTime),
                     date(gameDate),
-                    row.longValue("hometeamId"),
-                    row.longValue("awayteamId"),
+                    homeTeamId,
+                    awayTeamId,
                     row.string("hometeamCity"),
                     row.string("hometeamName"),
                     row.string("awayteamCity"),
@@ -241,9 +249,9 @@ public class HistoricalDataImportService {
                     row.string("gameSubtype"),
                     row.string("gameLabel"),
                     row.string("gameSubLabel"),
-                    row.intValue("seriesGameNumber"),
-                    row.intValue("attendance"),
-                    row.longValue("arenaId"),
+                    row.optionalIntValue("seriesGameNumber"),
+                    row.optionalIntValue("attendance"),
+                    row.optionalLongValue("arenaId"),
                     row.string("arenaName"),
                     row.string("arenaCity"),
                     row.string("arenaState"),
@@ -258,7 +266,7 @@ public class HistoricalDataImportService {
         return count[0];
     }
 
-    private int importTeamStats(Path source) throws IOException {
+    private int importTeamStats(Path source, Set<Long> validGameIds, Set<Long> validTeamIds) throws IOException {
         String sql = """
                 insert into team_game_stats (
                     game_id, team_id, opponent_team_id, home, win, team_score, opponent_score, assists, blocks,
@@ -304,10 +312,16 @@ public class HistoricalDataImportService {
         int[] count = {0};
 
         readCsv(source, "TeamStatistics.csv", row -> {
+            Long gameId = row.longValue("gameId");
+            Long teamId = row.longValue("teamId");
+            Long opponentTeamId = row.longValue("opponentTeamId");
+            if (!validGameIds.contains(gameId) || !knownOrNull(validTeamIds, teamId) || !knownOrNull(validTeamIds, opponentTeamId)) {
+                return;
+            }
             batch.add(new Object[] {
-                    row.longValue("gameId"),
-                    row.longValue("teamId"),
-                    row.longValue("opponentTeamId"),
+                    gameId,
+                    teamId,
+                    opponentTeamId,
                     row.flag("home"),
                     row.flag("win"),
                     row.intValue("teamScore"),
@@ -345,7 +359,11 @@ public class HistoricalDataImportService {
         return count[0];
     }
 
-    private int importPlayerStats(Path source) throws IOException {
+    private int importPlayerStats(
+            Path source,
+            Set<Long> validGameIds,
+            Set<Long> validTeamIds,
+            Set<Long> validPlayerIds) throws IOException {
         String sql = """
                 insert into player_game_stats (
                     game_id, player_id, team_id, opponent_team_id, win, home, num_minutes, points, assists,
@@ -388,11 +406,21 @@ public class HistoricalDataImportService {
         int[] count = {0};
 
         readCsv(source, "PlayerStatistics.csv", row -> {
+            Long gameId = row.longValue("gameId");
+            Long playerId = row.longValue("personId");
+            Long teamId = row.longValue("playerteamId");
+            Long opponentTeamId = row.longValue("opponentteamId");
+            if (!validGameIds.contains(gameId)
+                    || !validPlayerIds.contains(playerId)
+                    || !knownOrNull(validTeamIds, teamId)
+                    || !knownOrNull(validTeamIds, opponentTeamId)) {
+                return;
+            }
             batch.add(new Object[] {
-                    row.longValue("gameId"),
-                    row.longValue("personId"),
-                    row.longValue("playerteamId"),
-                    row.longValue("opponentteamId"),
+                    gameId,
+                    playerId,
+                    teamId,
+                    opponentTeamId,
                     row.flag("win"),
                     row.flag("home"),
                     row.decimalValue("numMinutes"),
@@ -449,6 +477,10 @@ public class HistoricalDataImportService {
                 insert into data_source_logs (source_name, source_type, source_path, status, records_processed)
                 values (?, ?, ?, ?, ?)
                 """, fileName, "kaggle_csv", fileName, "success", recordsProcessed);
+    }
+
+    private Set<Long> loadExistingIds(String tableName, String columnName) {
+        return new HashSet<>(jdbcTemplate.queryForList("select " + columnName + " from " + tableName, Long.class));
     }
 
     private void readCsv(Path source, String fileName, CsvRowReader.CsvRowConsumer consumer) throws IOException {
@@ -524,6 +556,10 @@ public class HistoricalDataImportService {
 
     private static Integer positiveOrNull(Integer value) {
         return value == null || value < 0 ? null : value;
+    }
+
+    private static boolean knownOrNull(Set<Long> knownIds, Long value) {
+        return value == null || knownIds.contains(value);
     }
 
     @SafeVarargs

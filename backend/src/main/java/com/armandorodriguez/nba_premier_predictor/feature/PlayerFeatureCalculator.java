@@ -100,8 +100,11 @@ public class PlayerFeatureCalculator {
         if (rows.size() < 6) {
             return null;
         }
-        double latest = averageMinutes(rows.subList(rows.size() - 3, rows.size()));
-        double previous = averageMinutes(rows.subList(rows.size() - 6, rows.size() - 3));
+        Double latest = averageMinutes(rows.subList(rows.size() - 3, rows.size()));
+        Double previous = averageMinutes(rows.subList(rows.size() - 6, rows.size() - 3));
+        if (latest == null || previous == null) {
+            return null;
+        }
         return round(latest - previous);
     }
 

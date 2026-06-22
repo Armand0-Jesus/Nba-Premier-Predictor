@@ -28,9 +28,25 @@ final class CsvRow {
         return value == null ? null : new BigDecimal(value).longValue();
     }
 
+    Long optionalLongValue(String column) {
+        try {
+            return longValue(column);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
     Integer intValue(String column) {
         String value = string(column);
         return value == null ? null : new BigDecimal(value).intValue();
+    }
+
+    Integer optionalIntValue(String column) {
+        try {
+            return intValue(column);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     BigDecimal decimalValue(String column) {

@@ -10,3 +10,4 @@
 .vscode/
 data-pipeline/raw/
 models/
+ml-service/artifacts/
