@@ -20,6 +20,7 @@ MODEL_ARTIFACT_PATH = Path(os.getenv("MODEL_ARTIFACT_PATH", str(DEFAULT_ARTIFACT
 
 app = FastAPI(title="NBA Premier Predictor ML Service", version="0.1.0")
 app.state.player_model = PlayerBaselineModel.load(MODEL_ARTIFACT_PATH)
+app.state.player_metrics = None
 
 
 class PlayerPredictionRequest(BaseModel):
@@ -54,6 +55,19 @@ class TrainingResponse(BaseModel):
     artifact_path: str
 
 
+class EvaluationResponse(BaseModel):
+    model_version: str
+    train_rows: int
+    test_rows: int
+    total_rows: int
+    train_ratio: float
+    training_data_start: str | None
+    training_data_end: str | None
+    validation_data_start: str | None
+    validation_data_end: str | None
+    metrics: dict[str, dict[str, float]]
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     model: PlayerBaselineModel = app.state.player_model
@@ -64,6 +78,7 @@ def health() -> dict[str, Any]:
     }
 
 
+@app.post("/train/player", response_model=TrainingResponse)
 @app.post("/train/player-baseline", response_model=TrainingResponse)
 def train_player_baseline(
         season: int | None = None,
@@ -83,6 +98,22 @@ def train_player_baseline(
     )
 
 
+@app.post("/evaluate/player-baseline", response_model=EvaluationResponse)
+def evaluate_player_baseline(
+        season: int | None = None,
+        limit: int = Query(default=10000, ge=2, le=10000),
+        train_ratio: float = Query(default=0.8, gt=0, lt=1)) -> EvaluationResponse:
+    rows = fetch_player_training_rows(season, limit)
+    try:
+        metrics = PlayerBaselineModel.evaluate_time_split(rows, train_ratio)
+    except ValueError as ex:
+        raise HTTPException(status_code=400, detail=str(ex)) from ex
+
+    app.state.player_metrics = metrics
+    return EvaluationResponse(**metrics)
+
+
+@app.post("/predict/player", response_model=PlayerPredictionResponse)
 @app.post("/predict/player-stats", response_model=PlayerPredictionResponse)
 def predict_player_stats(request: PlayerPredictionRequest) -> PlayerPredictionResponse:
     model: PlayerBaselineModel = app.state.player_model
@@ -102,6 +133,36 @@ def predict_fantasy(request: PlayerPredictionRequest) -> PlayerPredictionRespons
     return predict_player_stats(request)
 
 
+@app.get("/model/metrics")
+def model_metrics() -> dict[str, Any]:
+    model: PlayerBaselineModel = app.state.player_model
+    return {
+        "modelVersion": model.model_version,
+        "trainedRows": model.trained_rows,
+        "playerBaseline": app.state.player_metrics,
+    }
+
+
+@app.get("/model/versions")
+def model_versions() -> dict[str, Any]:
+    model: PlayerBaselineModel = app.state.player_model
+    return {
+        "activeModel": {
+            "versionName": model.model_version,
+            "modelType": "ridge-regression",
+            "targetVariables": [
+                "points",
+                "rebounds",
+                "assists",
+                "minutes",
+                "fantasyPoints",
+            ],
+            "trainedRows": model.trained_rows,
+            "artifactPath": str(MODEL_ARTIFACT_PATH),
+        }
+    }
+
+
 def fetch_player_training_rows(season: int | None, limit: int) -> list[dict[str, Any]]:
     params: dict[str, Any] = {"limit": limit}
     if season is not None:
@@ -114,7 +175,7 @@ def fetch_player_training_rows(season: int | None, limit: int) -> list[dict[str,
                 raise HTTPException(status_code=502, detail=f"Backend returned HTTP {response.status}")
             payload = response.read().decode("utf-8")
     except urllib.error.URLError as ex:
-        raise HTTPException(status_code=502, detail=f"Could not fetch backend training data: {ex}") from ex
+        raise HTTPException(status_code=502, detail=f"Could not fetch data: {ex}") from ex
 
     data = json.loads(payload)
     if not isinstance(data, list):

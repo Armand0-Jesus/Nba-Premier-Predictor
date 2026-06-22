@@ -47,9 +47,28 @@ class PlayerBaselineModelTests(unittest.TestCase):
         self.assertGreater(prediction["confidence_score"], 0.45)
         self.assertTrue(prediction["factors"])
 
+    def test_evaluate_time_split_reports_holdout_metrics(self):
+        rows = [
+            training_row(10, 4, 3, 28, 19.3, "2023-10-01T19:00:00"),
+            training_row(12, 5, 4, 29, 23.0, "2023-10-02T19:00:00"),
+            training_row(20, 6, 5, 32, 36.7, "2023-10-03T19:00:00"),
+            training_row(24, 8, 7, 34, 44.1, "2023-10-04T19:00:00"),
+        ]
 
-def training_row(points, rebounds, assists, minutes, fantasy_points):
+        evaluation = PlayerBaselineModel.evaluate_time_split(rows, train_ratio=0.75)
+
+        self.assertEqual(3, evaluation["train_rows"])
+        self.assertEqual(1, evaluation["test_rows"])
+        self.assertEqual("2023-10-01T19:00:00", evaluation["training_data_start"])
+        self.assertEqual("2023-10-04T19:00:00", evaluation["validation_data_end"])
+        self.assertIn("projected_points", evaluation["metrics"])
+        self.assertIn("mae", evaluation["metrics"]["fantasy_points"])
+        self.assertIn("rmse", evaluation["metrics"]["fantasy_points"])
+
+
+def training_row(points, rebounds, assists, minutes, fantasy_points, game_time=None):
     return {
+        "gameDateTime": game_time,
         "features": {
             "games_played_prior": 2,
             "last_5_points_avg": float(points),

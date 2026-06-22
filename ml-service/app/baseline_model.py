@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from pathlib import Path
 from typing import Any
 
@@ -29,20 +30,51 @@ class PlayerBaselineModel:
 
     @classmethod
     def fit(cls, rows: list[dict[str, Any]]) -> "PlayerBaselineModel":
-        features: list[dict[str, float]] = []
-        targets: list[list[float]] = []
-
-        for row in rows:
-            target = row.get("targets", {})
-            values = [number(target.get(source_name)) for _, source_name in TARGETS]
-            if any(value is None for value in values):
-                continue
-            features.append(clean_features(row.get("features", {})))
-            targets.append([float(value) for value in values])
-
-        if not targets:
+        examples = complete_training_examples(rows)
+        if not examples:
             raise ValueError("No complete player training rows were provided")
+        return cls._fit_examples(examples)
 
+    @classmethod
+    def evaluate_time_split(cls, rows: list[dict[str, Any]], train_ratio: float = 0.8) -> dict[str, Any]:
+        if train_ratio <= 0 or train_ratio >= 1:
+            raise ValueError("train_ratio must be greater than 0 and less than 1")
+
+        examples = complete_training_examples(rows)
+        if len(examples) < 2:
+            raise ValueError("At least two complete player training rows are required for evaluation")
+
+        split_index = min(max(int(len(examples) * train_ratio), 1), len(examples) - 1)
+        train_examples = examples[:split_index]
+        test_examples = examples[split_index:]
+        model = cls._fit_examples(train_examples)
+
+        values_by_target: dict[str, list[tuple[float, float]]] = {output_name: [] for output_name, _ in TARGETS}
+        for example in test_examples:
+            prediction = model.predict(example["features"])
+            for index, (output_name, _) in enumerate(TARGETS):
+                values_by_target[output_name].append((prediction[output_name], example["targets"][index]))
+
+        return {
+            "model_version": model.model_version,
+            "train_rows": len(train_examples),
+            "test_rows": len(test_examples),
+            "total_rows": len(examples),
+            "train_ratio": train_ratio,
+            "training_data_start": example_time(train_examples[0]),
+            "training_data_end": example_time(train_examples[-1]),
+            "validation_data_start": example_time(test_examples[0]),
+            "validation_data_end": example_time(test_examples[-1]),
+            "metrics": {
+                output_name: regression_metrics(values)
+                for output_name, values in values_by_target.items()
+            },
+        }
+
+    @classmethod
+    def _fit_examples(cls, examples: list[dict[str, Any]]) -> "PlayerBaselineModel":
+        features = [example["features"] for example in examples]
+        targets = [example["targets"] for example in examples]
         pipeline = Pipeline([
             ("features", DictVectorizer(sparse=False)),
             ("imputer", SimpleImputer(strategy="constant", fill_value=0.0)),
@@ -54,7 +86,7 @@ class PlayerBaselineModel:
         for index, (output_name, _) in enumerate(TARGETS):
             fallback_targets[output_name] = round(sum(row[index] for row in targets) / len(targets), 2)
 
-        return cls(pipeline=pipeline, fallback_targets=fallback_targets, trained_rows=len(targets))
+        return cls(pipeline=pipeline, fallback_targets=fallback_targets, trained_rows=len(examples))
 
     @classmethod
     def load(cls, artifact_path: Path) -> "PlayerBaselineModel":
@@ -117,6 +149,46 @@ def clean_features(raw_features: dict[str, Any]) -> dict[str, float]:
         if parsed is not None:
             clean[key] = parsed
     return clean
+
+
+def complete_training_examples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    examples: list[dict[str, Any]] = []
+    for row in sorted(rows, key=training_row_sort_key):
+        target = row.get("targets", {})
+        values = [number(target.get(source_name)) for _, source_name in TARGETS]
+        if any(value is None for value in values):
+            continue
+        examples.append({
+            "features": clean_features(row.get("features", {})),
+            "targets": [float(value) for value in values],
+            "row": row,
+        })
+    return examples
+
+
+def training_row_sort_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(row.get("gameDateTime") or ""),
+        str(row.get("gameId") or ""),
+        str(row.get("playerId") or ""),
+    )
+
+
+def example_time(example: dict[str, Any]) -> str | None:
+    value = example["row"].get("gameDateTime")
+    return str(value) if value is not None else None
+
+
+def regression_metrics(values: list[tuple[float, float]]) -> dict[str, float]:
+    errors = [predicted - actual for predicted, actual in values]
+    predictions = [predicted for predicted, _ in values]
+    actuals = [actual for _, actual in values]
+    return {
+        "mae": round(sum(abs(error) for error in errors) / len(errors), 4),
+        "rmse": round(math.sqrt(sum(error * error for error in errors) / len(errors)), 4),
+        "mean_prediction": round(sum(predictions) / len(predictions), 4),
+        "mean_actual": round(sum(actuals) / len(actuals), 4),
+    }
 
 
 def number(value: Any) -> float | None:
