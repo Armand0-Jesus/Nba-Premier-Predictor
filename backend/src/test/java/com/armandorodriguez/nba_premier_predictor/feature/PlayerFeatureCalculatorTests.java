@@ -25,8 +25,8 @@ class PlayerFeatureCalculatorTests {
         PlayerFeatureRow target = playerRow(7, "2024-01-10T19:00:00", 999, 99, 99, 99);
 
         Map<String, Object> features = calculator.calculate(target, prior, List.of(
-                new TeamFeatureRow(1610612747L, LocalDateTime.parse("2024-01-02T19:00:00"), 98, 100),
-                new TeamFeatureRow(1610612747L, LocalDateTime.parse("2024-01-04T19:00:00"), 115, 110)));
+                teamRow(1, "2024-01-02T19:00:00", 98, 100),
+                teamRow(2, "2024-01-04T19:00:00", 115, 110)));
 
         assertThat(features)
                 .containsEntry("last_3_points_avg", 22.0)
@@ -53,5 +53,20 @@ class PlayerFeatureCalculatorTests {
                 rebounds,
                 assists,
                 2);
+    }
+
+    private static TeamFeatureRow teamRow(long gameId, String gameTime, int teamScore, int opponentScore) {
+        return new TeamFeatureRow(
+                gameId,
+                1610612747L,
+                1610612744L,
+                2023,
+                LocalDateTime.parse(gameTime),
+                false,
+                teamScore,
+                opponentScore,
+                24,
+                40,
+                12);
     }
 }

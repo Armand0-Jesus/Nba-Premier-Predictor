@@ -83,7 +83,9 @@ public class PlayerFeatureSnapshotService {
 
     private List<TeamFeatureRow> loadTeamRows(Integer seasonStartYear) {
         return jdbcTemplate.query("""
-                select t.team_id, g.game_date_time_est, t.team_score, t.opponent_score
+                select t.game_id, t.team_id, t.opponent_team_id, g.season_start_year,
+                       g.game_date_time_est, t.home, t.team_score, t.opponent_score,
+                       t.assists, t.rebounds_total, t.turnovers
                 from team_game_stats t
                 join games g on g.game_id = t.game_id
                 where (? is null or g.season_start_year = ?)
@@ -110,10 +112,17 @@ public class PlayerFeatureSnapshotService {
 
     private TeamFeatureRow mapTeamRow(ResultSet rs, int rowNum) throws SQLException {
         return new TeamFeatureRow(
+                rs.getLong("game_id"),
                 rs.getLong("team_id"),
+                nullableLong(rs, "opponent_team_id"),
+                nullableInt(rs, "season_start_year"),
                 rs.getTimestamp("game_date_time_est").toLocalDateTime(),
+                nullableBoolean(rs, "home"),
                 nullableInt(rs, "team_score"),
-                nullableInt(rs, "opponent_score"));
+                nullableInt(rs, "opponent_score"),
+                nullableInt(rs, "assists"),
+                nullableInt(rs, "rebounds_total"),
+                nullableInt(rs, "turnovers"));
     }
 
     private List<TeamFeatureRow> opponentRowsBefore(Map<Long, List<TeamFeatureRow>> rowsByTeam, PlayerFeatureRow target) {

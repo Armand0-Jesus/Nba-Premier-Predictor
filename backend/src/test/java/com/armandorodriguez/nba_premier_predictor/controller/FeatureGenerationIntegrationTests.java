@@ -58,4 +58,55 @@ class FeatureGenerationIntegrationTests {
                 .containsEntry("is_home", true)
                 .containsEntry("opponent_points_allowed_avg", 105.0);
     }
+
+    @Test
+    void generatesLeakageSafeTeamFeatureSnapshots() throws Exception {
+        mockMvc.perform(post("/api/features/team-snapshots/generate").param("season", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.featureType").value("team"))
+                .andExpect(jsonPath("$.seasonStartYear").value(2023))
+                .andExpect(jsonPath("$.snapshotsGenerated").value(6));
+
+        String featuresJson = jdbcTemplate.queryForObject("""
+                select features
+                from team_feature_snapshots
+                where game_id = ? and team_id = ?
+                """, String.class, 22300003L, 1610612744L);
+        Map<String, Object> features = objectMapper.readValue(featuresJson, new TypeReference<>() {
+        });
+
+        assertThat(features)
+                .containsEntry("games_played_prior", 2)
+                .containsEntry("last_3_team_score_avg", 105.0)
+                .containsEntry("season_point_differential_avg", 7.5)
+                .containsEntry("days_rest", 2)
+                .containsEntry("back_to_back", false)
+                .containsEntry("is_home", true)
+                .containsEntry("opponent_points_allowed_avg", 105.0);
+    }
+
+    @Test
+    void generatesLeakageSafeGameFeatureSnapshots() throws Exception {
+        mockMvc.perform(post("/api/features/game-snapshots/generate").param("season", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.featureType").value("game"))
+                .andExpect(jsonPath("$.seasonStartYear").value(2023))
+                .andExpect(jsonPath("$.snapshotsGenerated").value(3));
+
+        String featuresJson = jdbcTemplate.queryForObject("""
+                select features
+                from game_feature_snapshots
+                where game_id = ?
+                """, String.class, 22300003L);
+        Map<String, Object> features = objectMapper.readValue(featuresJson, new TypeReference<>() {
+        });
+
+        assertThat(((Number) features.get("home_team_id")).longValue()).isEqualTo(1610612744L);
+        assertThat(((Number) features.get("away_team_id")).longValue()).isEqualTo(1610612747L);
+        assertThat(features)
+                .containsEntry("home_last_3_team_score_avg", 105.0)
+                .containsEntry("away_last_3_team_score_avg", 97.5)
+                .containsEntry("season_point_differential_delta", 15.0)
+                .containsEntry("last_5_point_differential_delta", 15.0);
+    }
 }
