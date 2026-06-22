@@ -27,10 +27,10 @@ app.state.player_metrics = None
 
 class PlayerPredictionRequest(BaseModel):
     game_id: int | None = None
-    player_id: int
+    player_id: int = Field(gt=0)
     team_id: int | None = None
     data_cutoff_time: str | None = None
-    features: dict[str, Any] = Field(default_factory=dict)
+    features: dict[str, Any] = Field(min_length=1)
 
 
 class PlayerPredictionResponse(BaseModel):
