@@ -109,4 +109,33 @@ class FeatureGenerationIntegrationTests {
                 .containsEntry("season_point_differential_delta", 15.0)
                 .containsEntry("last_5_point_differential_delta", 15.0);
     }
+
+    @Test
+    void populatesAllFeatureSnapshotTablesForASeason() throws Exception {
+        mockMvc.perform(post("/api/features/player-snapshots/generate").param("season", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshotsGenerated").value(3));
+        mockMvc.perform(post("/api/features/team-snapshots/generate").param("season", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshotsGenerated").value(6));
+        mockMvc.perform(post("/api/features/game-snapshots/generate").param("season", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshotsGenerated").value(3));
+
+        assertThat(countRows("player_feature_snapshots")).isEqualTo(3);
+        assertThat(countRows("team_feature_snapshots")).isEqualTo(6);
+        assertThat(countRows("game_feature_snapshots")).isEqualTo(3);
+
+        Integer cutoffViolations = jdbcTemplate.queryForObject("""
+                select count(*)
+                from player_feature_snapshots f
+                join games g on g.game_id = f.game_id
+                where f.data_cutoff_time >= g.game_date_time_est
+                """, Integer.class);
+        assertThat(cutoffViolations).isZero();
+    }
+
+    private Integer countRows(String tableName) {
+        return jdbcTemplate.queryForObject("select count(*) from " + tableName, Integer.class);
+    }
 }
