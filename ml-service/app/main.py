@@ -17,6 +17,8 @@ from app.baseline_model import PlayerBaselineModel
 BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://localhost:8080").rstrip("/")
 DEFAULT_ARTIFACT_PATH = Path(__file__).resolve().parents[1] / "artifacts" / "player_baseline.joblib"
 MODEL_ARTIFACT_PATH = Path(os.getenv("MODEL_ARTIFACT_PATH", str(DEFAULT_ARTIFACT_PATH)))
+BACKEND_PAGE_SIZE = 10000
+MAX_TRAINING_ROWS = 50000
 
 app = FastAPI(title="NBA Premier Predictor ML Service", version="0.1.0")
 app.state.player_model = PlayerBaselineModel.load(MODEL_ARTIFACT_PATH)
@@ -82,7 +84,7 @@ def health() -> dict[str, Any]:
 @app.post("/train/player-baseline", response_model=TrainingResponse)
 def train_player_baseline(
         season: int | None = None,
-        limit: int = Query(default=10000, ge=1, le=10000)) -> TrainingResponse:
+        limit: int = Query(default=10000, ge=1, le=MAX_TRAINING_ROWS)) -> TrainingResponse:
     rows = fetch_player_training_rows(season, limit)
     try:
         model = PlayerBaselineModel.fit(rows)
@@ -101,7 +103,7 @@ def train_player_baseline(
 @app.post("/evaluate/player-baseline", response_model=EvaluationResponse)
 def evaluate_player_baseline(
         season: int | None = None,
-        limit: int = Query(default=10000, ge=2, le=10000),
+        limit: int = Query(default=10000, ge=2, le=MAX_TRAINING_ROWS),
         train_ratio: float = Query(default=0.8, gt=0, lt=1)) -> EvaluationResponse:
     rows = fetch_player_training_rows(season, limit)
     try:
@@ -164,7 +166,22 @@ def model_versions() -> dict[str, Any]:
 
 
 def fetch_player_training_rows(season: int | None, limit: int) -> list[dict[str, Any]]:
-    params: dict[str, Any] = {"limit": limit}
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    remaining = limit
+    while remaining > 0:
+        page_limit = min(remaining, BACKEND_PAGE_SIZE)
+        page = fetch_player_training_page(season, page_limit, offset)
+        rows.extend(page)
+        if len(page) < page_limit:
+            break
+        offset += len(page)
+        remaining -= len(page)
+    return rows
+
+
+def fetch_player_training_page(season: int | None, limit: int, offset: int) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
     if season is not None:
         params["season"] = season
     url = f"{BACKEND_API_URL}/api/training-data/player-stats?{urllib.parse.urlencode(params)}"

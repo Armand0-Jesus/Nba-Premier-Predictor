@@ -27,7 +27,8 @@ public class TrainingDataController {
     @GetMapping("/player-stats")
     List<PlayerTrainingDataRow> playerStats(
             @RequestParam(required = false) Integer season,
-            @RequestParam(defaultValue = "1000") @Min(1) @Max(10000) int limit) {
-        return trainingDataService.playerStatRows(season, limit);
+            @RequestParam(defaultValue = "1000") @Min(1) @Max(10000) int limit,
+            @RequestParam(defaultValue = "0") @Min(0) @Max(1000000) int offset) {
+        return trainingDataService.playerStatRows(season, limit, offset);
     }
 }

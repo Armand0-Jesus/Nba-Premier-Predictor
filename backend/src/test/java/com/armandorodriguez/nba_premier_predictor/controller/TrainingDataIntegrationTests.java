@@ -63,6 +63,28 @@ class TrainingDataIntegrationTests {
                 .containsEntry("fantasyPoints", 1266.3);
     }
 
+    @Test
+    void pagesPlayerTrainingRowsWithOffset() throws Exception {
+        mockMvc.perform(post("/api/features/player-snapshots/generate").param("season", "2023"))
+                .andExpect(status().isOk());
+
+        String responseJson = mockMvc.perform(get("/api/training-data/player-stats")
+                        .param("season", "2023")
+                        .param("limit", "1")
+                        .param("offset", "1"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        List<Map<String, Object>> rows = objectMapper.readValue(responseJson, new TypeReference<>() {
+        });
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0))
+                .containsEntry("gameId", 22300002)
+                .containsEntry("playerId", 201939);
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> nestedMap(Map<String, Object> row, String key) {
         return (Map<String, Object>) row.get(key);

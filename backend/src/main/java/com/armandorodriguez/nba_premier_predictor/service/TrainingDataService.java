@@ -27,7 +27,7 @@ public class TrainingDataService {
         this.objectMapper = objectMapper;
     }
 
-    public List<PlayerTrainingDataRow> playerStatRows(Integer seasonStartYear, int limit) {
+    public List<PlayerTrainingDataRow> playerStatRows(Integer seasonStartYear, int limit, int offset) {
         return jdbcTemplate.query("""
                 select f.game_id, f.player_id, f.team_id, g.season_start_year, g.game_date_time_est,
                        f.data_cutoff_time, f.features, s.points, s.rebounds_total, s.assists,
@@ -44,7 +44,8 @@ public class TrainingDataService {
                   and s.assists is not null
                 order by g.game_date_time_est, f.game_id, f.player_id
                 limit ?
-                """, this::mapRow, seasonStartYear, seasonStartYear, limit);
+                offset ?
+                """, this::mapRow, seasonStartYear, seasonStartYear, limit, offset);
     }
 
     private PlayerTrainingDataRow mapRow(ResultSet rs, int rowNum) throws SQLException {

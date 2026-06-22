@@ -1,7 +1,7 @@
 import shutil
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from app import main
 
@@ -55,6 +55,22 @@ class MainEndpointTests(unittest.TestCase):
             self.assertEqual(3, main.app.state.player_model.trained_rows)
         finally:
             shutil.rmtree(artifact_dir, ignore_errors=True)
+
+    def test_fetch_player_training_rows_pages_backend_requests(self):
+        pages = [
+            [{"row": 1}, {"row": 2}],
+            [{"row": 3}],
+        ]
+
+        with patch.object(main, "BACKEND_PAGE_SIZE", 2):
+            with patch.object(main, "fetch_player_training_page", side_effect=pages) as fetch_page:
+                rows = main.fetch_player_training_rows(season=2023, limit=5)
+
+        self.assertEqual([{"row": 1}, {"row": 2}, {"row": 3}], rows)
+        self.assertEqual([
+            call(2023, 2, 0),
+            call(2023, 2, 2),
+        ], fetch_page.mock_calls)
 
 
 def training_row(points, rebounds, assists, minutes, fantasy_points, game_time=None):
