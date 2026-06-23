@@ -1,0 +1,193 @@
+package com.armandorodriguez.nba_premier_predictor.service;
+
+import java.sql.PreparedStatement;
+import java.sql.Statement;
+import java.sql.Timestamp;
+import java.util.List;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
+import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.PredictionHistoryResponse;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+@Service
+public class PredictionService {
+
+    private final MlPredictionClient mlPredictionClient;
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+
+    public PredictionService(
+            MlPredictionClient mlPredictionClient,
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper) {
+        this.mlPredictionClient = mlPredictionClient;
+        this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
+    }
+
+    @Transactional
+    public PlayerPredictionResponse predictPlayer(PlayerPredictionRequest request) {
+        PlayerPredictionResponse response = mlPredictionClient.predictPlayer(request);
+        Long predictionId = savePrediction("player_stat", request, response);
+        savePlayerStatPrediction(predictionId, response);
+        return response.withPredictionId(predictionId);
+    }
+
+    @Transactional
+    public PlayerPredictionResponse predictFantasy(PlayerPredictionRequest request) {
+        PlayerPredictionResponse response = mlPredictionClient.predictFantasy(request);
+        Long predictionId = savePrediction("fantasy", request, response);
+        saveFantasyPrediction(predictionId, response);
+        return response.withPredictionId(predictionId);
+    }
+
+    public List<PredictionHistoryResponse> history(int limit) {
+        return jdbcTemplate.query("""
+                select p.id, p.prediction_type, p.game_id, p.player_id, p.team_id,
+                       mv.version_name, p.requested_at, p.confidence_score,
+                       ps.projected_points, ps.projected_rebounds, ps.projected_assists,
+                       ps.projected_minutes, fp.fantasy_points, fp.floor_projection,
+                       fp.ceiling_projection, fp.risk_level
+                from predictions p
+                left join model_versions mv on mv.id = p.model_version_id
+                left join player_stat_predictions ps on ps.prediction_id = p.id
+                left join fantasy_predictions fp on fp.prediction_id = p.id
+                order by p.requested_at desc, p.id desc
+                limit ?
+                """, (rs, rowNum) -> new PredictionHistoryResponse(
+                rs.getLong("id"),
+                rs.getString("prediction_type"),
+                nullableLong(rs, "game_id"),
+                nullableLong(rs, "player_id"),
+                nullableLong(rs, "team_id"),
+                rs.getString("version_name"),
+                rs.getTimestamp("requested_at").toInstant(),
+                nullableDouble(rs, "confidence_score"),
+                nullableDouble(rs, "projected_points"),
+                nullableDouble(rs, "projected_rebounds"),
+                nullableDouble(rs, "projected_assists"),
+                nullableDouble(rs, "projected_minutes"),
+                nullableDouble(rs, "fantasy_points"),
+                nullableDouble(rs, "floor_projection"),
+                nullableDouble(rs, "ceiling_projection"),
+                rs.getString("risk_level")), limit);
+    }
+
+    private Long savePrediction(String predictionType, PlayerPredictionRequest request, PlayerPredictionResponse response) {
+        Long modelVersionId = ensureModelVersion(response.modelVersion());
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement("""
+                    insert into predictions (
+                        prediction_type, game_id, player_id, team_id, model_version_id,
+                        data_cutoff_time, confidence_score, explanation
+                    ) values (?, ?, ?, ?, ?, ?, ?, cast(? as jsonb))
+                    """, Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, predictionType);
+            setLong(ps, 2, request.gameId());
+            ps.setLong(3, request.playerId());
+            setLong(ps, 4, request.teamId());
+            ps.setLong(5, modelVersionId);
+            if (request.dataCutoffTime() == null) {
+                ps.setTimestamp(6, null);
+            } else {
+                ps.setTimestamp(6, Timestamp.valueOf(request.dataCutoffTime()));
+            }
+            setDouble(ps, 7, response.confidenceScore());
+            ps.setString(8, writeJson(response.factors()));
+            return ps;
+        }, keyHolder);
+        Object key = keyHolder.getKeys().get("id");
+        return ((Number) key).longValue();
+    }
+
+    private void savePlayerStatPrediction(Long predictionId, PlayerPredictionResponse response) {
+        jdbcTemplate.update("""
+                insert into player_stat_predictions (
+                    prediction_id, projected_points, projected_rebounds, projected_assists,
+                    projected_minutes
+                ) values (?, ?, ?, ?, ?)
+                """,
+                predictionId,
+                response.projectedPoints(),
+                response.projectedRebounds(),
+                response.projectedAssists(),
+                response.projectedMinutes());
+    }
+
+    private void saveFantasyPrediction(Long predictionId, PlayerPredictionResponse response) {
+        jdbcTemplate.update("""
+                insert into fantasy_predictions (
+                    prediction_id, fantasy_points, floor_projection, ceiling_projection,
+                    risk_level, scoring_formula
+                ) values (?, ?, ?, ?, ?, cast(? as jsonb))
+                """,
+                predictionId,
+                response.fantasyPoints(),
+                response.fantasyFloor(),
+                response.fantasyCeiling(),
+                response.riskLevel(),
+                "{}");
+    }
+
+    private Long ensureModelVersion(String versionName) {
+        List<Long> existing = jdbcTemplate.queryForList(
+                "select id from model_versions where version_name = ?",
+                Long.class,
+                versionName);
+        if (!existing.isEmpty()) {
+            return existing.get(0);
+        }
+        jdbcTemplate.update("""
+                insert into model_versions (
+                    version_name, model_type, target_variable, status, is_active
+                ) values (?, ?, ?, ?, ?)
+                """, versionName, "ridge-regression", "player_stat_fantasy", "active", true);
+        return jdbcTemplate.queryForObject(
+                "select id from model_versions where version_name = ?",
+                Long.class,
+                versionName);
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Could not serialize prediction explanation", ex);
+        }
+    }
+
+    private static void setLong(PreparedStatement ps, int parameterIndex, Long value) throws java.sql.SQLException {
+        if (value == null) {
+            ps.setObject(parameterIndex, null);
+        } else {
+            ps.setLong(parameterIndex, value);
+        }
+    }
+
+    private static void setDouble(PreparedStatement ps, int parameterIndex, Double value) throws java.sql.SQLException {
+        if (value == null) {
+            ps.setObject(parameterIndex, null);
+        } else {
+            ps.setDouble(parameterIndex, value);
+        }
+    }
+
+    private static Long nullableLong(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
+    }
+
+    private static Double nullableDouble(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        double value = rs.getDouble(column);
+        return rs.wasNull() ? null : value;
+    }
+}

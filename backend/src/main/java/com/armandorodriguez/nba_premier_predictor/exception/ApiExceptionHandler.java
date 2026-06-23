@@ -17,6 +17,11 @@ class ApiExceptionHandler {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
+    @ExceptionHandler(MlServiceException.class)
+    ResponseEntity<Map<String, Object>> mlService(MlServiceException ex) {
+        return error(HttpStatus.BAD_GATEWAY, ex.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<Map<String, Object>> validation(MethodArgumentNotValidException ex) {
         return error(HttpStatus.BAD_REQUEST, "Request validation failed");
