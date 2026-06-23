@@ -3,6 +3,7 @@ package com.armandorodriguez.nba_premier_predictor.exception;
 import java.time.Instant;
 import java.util.Map;
 
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -24,6 +25,11 @@ class ApiExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<Map<String, Object>> validation(MethodArgumentNotValidException ex) {
+        return error(HttpStatus.BAD_REQUEST, "Request validation failed");
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    ResponseEntity<Map<String, Object>> validation(ConstraintViolationException ex) {
         return error(HttpStatus.BAD_REQUEST, "Request validation failed");
     }
 
