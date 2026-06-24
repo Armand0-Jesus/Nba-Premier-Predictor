@@ -127,7 +127,7 @@ class PlayerBaselineModel:
         predictions["factors"] = factors(raw_features)
         return predictions
 
-    def _fallback_prediction(self, features: dict[str, float]) -> dict[str, float]:
+    def _fallback_prediction(self, features: dict[str, float | str]) -> dict[str, float]:
         points = feature_average(features, "points", self.fallback_targets.get("projected_points", 0.0))
         rebounds = feature_average(features, "rebounds", self.fallback_targets.get("projected_rebounds", 0.0))
         assists = feature_average(features, "assists", self.fallback_targets.get("projected_assists", 0.0))
@@ -142,12 +142,14 @@ class PlayerBaselineModel:
         }
 
 
-def clean_features(raw_features: dict[str, Any]) -> dict[str, float]:
-    clean: dict[str, float] = {}
+def clean_features(raw_features: dict[str, Any]) -> dict[str, float | str]:
+    clean: dict[str, float | str] = {}
     for key, value in raw_features.items():
         parsed = number(value)
         if parsed is not None:
             clean[key] = parsed
+        elif isinstance(value, str) and value.strip():
+            clean[key] = value.strip()
     return clean
 
 
@@ -201,37 +203,42 @@ def number(value: Any) -> float | None:
     return None
 
 
-def feature_average(features: dict[str, float], stat: str, fallback: float) -> float:
+def feature_average(features: dict[str, float | str], stat: str, fallback: float) -> float:
     candidates = [
-        features.get(f"last_5_{stat}_avg"),
-        features.get(f"last_3_{stat}_avg"),
-        features.get(f"season_{stat}_avg"),
+        numeric_feature(features, f"last_5_{stat}_avg"),
+        numeric_feature(features, f"last_3_{stat}_avg"),
+        numeric_feature(features, f"season_{stat}_avg"),
     ]
     values = [value for value in candidates if value is not None]
     if not values and stat == "minutes":
         values = [value for value in (
-            features.get("last_5_minutes_avg"),
-            features.get("season_minutes_avg"),
+            numeric_feature(features, "last_5_minutes_avg"),
+            numeric_feature(features, "season_minutes_avg"),
         ) if value is not None]
     return sum(values) / len(values) if values else fallback
 
 
-def risk_level(features: dict[str, float]) -> str:
-    games_played = features.get("games_played_prior", 0)
-    minutes_trend = abs(features.get("minutes_trend", 0))
-    if games_played < 3 or minutes_trend >= 8:
+def risk_level(features: dict[str, float | str]) -> str:
+    games_played = numeric_feature(features, "games_played_prior", 0)
+    minutes_trend = abs(numeric_feature(features, "recent_minutes_trend", numeric_feature(features, "minutes_trend", 0)))
+    rest_risk = numeric_feature(features, "rest_management_risk", 0)
+    volatility = numeric_feature(features, "fantasy_volatility_score", 0)
+    career_stage = features.get("career_stage")
+    if games_played < 3 or minutes_trend >= 8 or rest_risk >= 0.6 or volatility >= 14:
         return "high"
-    if games_played < 10 or minutes_trend >= 4:
+    if games_played < 10 or minutes_trend >= 4 or rest_risk >= 0.3 or volatility >= 8 or career_stage == "rookie":
         return "medium"
     return "low"
 
 
-def confidence_score(features: dict[str, float], trained: bool, trained_rows: int) -> float:
+def confidence_score(features: dict[str, float | str], trained: bool, trained_rows: int) -> float:
     base = 0.55 if trained else 0.4
     sample_bonus = min(trained_rows, 5000) / 20000
-    experience_bonus = min(features.get("games_played_prior", 0), 30) / 150
+    experience_bonus = min(numeric_feature(features, "games_played_prior", 0), 30) / 150
+    context_penalty = min(numeric_feature(features, "rest_management_risk", 0), 0.4) / 2
+    volatility_penalty = min(numeric_feature(features, "fantasy_volatility_score", 0), 20) / 200
     risk_penalty = {"low": 0.0, "medium": 0.08, "high": 0.16}[risk_level(features)]
-    return round(min(0.95, max(0.05, base + sample_bonus + experience_bonus - risk_penalty)), 4)
+    return round(min(0.95, max(0.05, base + sample_bonus + experience_bonus - risk_penalty - context_penalty - volatility_penalty)), 4)
 
 
 def factors(raw_features: dict[str, Any]) -> list[dict[str, Any]]:
@@ -242,7 +249,21 @@ def factors(raw_features: dict[str, Any]) -> list[dict[str, Any]]:
         "last_5_assists_avg",
         "last_5_minutes_avg",
         "minutes_trend",
+        "recent_minutes_trend",
         "days_rest",
+        "projected_starter",
+        "player_changed_team_before_game",
+        "team_missing_starters_count",
+        "team_roster_turnover_score",
+        "team_minutes_vacated_by_departures",
+        "team_usage_vacated_by_departures",
+        "teammate_injury_usage_boost",
+        "teammate_injury_minutes_boost",
+        "age_at_game",
+        "career_stage",
+        "rest_management_risk",
+        "injury_history_count_before_game",
+        "fantasy_volatility_score",
         "is_home",
         "opponent_points_allowed_avg",
     )
@@ -250,8 +271,13 @@ def factors(raw_features: dict[str, Any]) -> list[dict[str, Any]]:
         {"name": key, "value": raw_features[key]}
         for key in preferred
         if key in raw_features and raw_features[key] is not None
-    ][:6]
+    ][:8]
 
 
 def clamp_round(value: float) -> float:
     return round(max(0.0, value), 2)
+
+
+def numeric_feature(features: dict[str, float | str], key: str, fallback: float | None = None) -> float | None:
+    value = features.get(key)
+    return value if isinstance(value, (int, float)) else fallback

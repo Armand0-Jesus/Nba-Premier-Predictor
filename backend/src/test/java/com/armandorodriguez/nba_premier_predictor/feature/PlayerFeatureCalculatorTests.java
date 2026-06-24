@@ -3,6 +3,7 @@ package com.armandorodriguez.nba_premier_predictor.feature;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -32,11 +33,41 @@ class PlayerFeatureCalculatorTests {
                 .containsEntry("last_3_points_avg", 22.0)
                 .containsEntry("last_5_points_avg", 18.4)
                 .containsEntry("season_points_avg", 17.0)
+                .containsEntry("age_at_game", 35)
+                .containsEntry("age_entering_season", 35)
+                .containsEntry("years_experience_at_game", 14)
+                .containsEntry("career_stage", "late_career")
+                .containsEntry("career_games_played_before_game", 6)
+                .containsEntry("career_minutes_played_before_game", 162.0)
+                .containsEntry("projected_starter", true)
+                .containsEntry("player_changed_team_before_game", false)
+                .containsEntry("same_position_competition", 0)
+                .containsEntry("team_missing_starters_count", 1)
+                .containsEntry("team_roster_turnover_score", 0.07)
+                .containsEntry("team_minutes_vacated_by_departures", 26.0)
+                .containsEntry("team_usage_vacated_by_departures", 0.24)
+                .containsEntry("teammate_injury_usage_boost", 0.08)
+                .containsEntry("teammate_injury_minutes_boost", 2.5)
                 .containsEntry("minutes_trend", 10.0)
+                .containsEntry("recent_minutes_trend", 10.0)
                 .containsEntry("days_rest", 2L)
                 .containsEntry("back_to_back", false)
+                .containsEntry("injury_history_count_before_game", 1)
+                .containsEntry("fantasy_volatility_score", 9.83)
                 .containsEntry("opponent_points_allowed_avg", 105.0)
                 .containsEntry("opponent_point_differential_avg", 1.5);
+    }
+
+    @Test
+    void calculatesAgeAtHistoricalGameDateNotCurrentDate() {
+        Map<String, Object> features = calculator.calculate(
+                playerRow(7, "2020-01-10T19:00:00", 2019, 999, 99, 99, 99),
+                List.of(),
+                List.of());
+
+        assertThat(features)
+                .containsEntry("age_at_game", 31)
+                .containsEntry("age_entering_season", 31);
     }
 
     @Test
@@ -58,19 +89,39 @@ class PlayerFeatureCalculatorTests {
     }
 
     private static PlayerFeatureRow playerRow(long gameId, String gameTime, int points, int rebounds, int assists, Integer minutes) {
+        return playerRow(gameId, gameTime, 2023, points, rebounds, assists, minutes);
+    }
+
+    private static PlayerFeatureRow playerRow(long gameId, String gameTime, int seasonStartYear, int points, int rebounds, int assists, Integer minutes) {
         return new PlayerFeatureRow(
                 gameId,
                 201939L,
                 1610612744L,
                 1610612747L,
-                2023,
+                seasonStartYear,
                 LocalDateTime.parse(gameTime),
                 true,
                 minutes == null ? null : BigDecimal.valueOf(minutes),
                 points,
                 rebounds,
                 assists,
-                2);
+                2,
+                1,
+                0,
+                LocalDate.parse("1988-03-14"),
+                2009,
+                (int) gameId - 1,
+                BigDecimal.valueOf((gameId - 1) * 27),
+                1,
+                true,
+                false,
+                0,
+                1,
+                0.07,
+                26.0,
+                0.24,
+                0.08,
+                2.5);
     }
 
     private static TeamFeatureRow teamRow(long gameId, String gameTime, int teamScore, int opponentScore) {
@@ -85,6 +136,16 @@ class PlayerFeatureCalculatorTests {
                 opponentScore,
                 24,
                 40,
-                12);
+                12,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 }

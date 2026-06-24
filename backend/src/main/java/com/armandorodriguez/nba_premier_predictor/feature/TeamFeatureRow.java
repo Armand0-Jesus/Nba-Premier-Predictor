@@ -13,5 +13,15 @@ public record TeamFeatureRow(
         Integer opponentScore,
         Integer assists,
         Integer rebounds,
-        Integer turnovers) {
+        Integer turnovers,
+        Double averageTeamAge,
+        Double starterAverageAge,
+        Double rotationAverageAge,
+        Boolean youngTeamFlag,
+        Boolean veteranTeamFlag,
+        Double teamRosterTurnoverScore,
+        Double teamMinutesVacatedByDepartures,
+        Double teamUsageVacatedByDepartures,
+        Integer teamMissingStartersCount,
+        Integer projectedStartersAvailableCount) {
 }

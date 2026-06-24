@@ -1,6 +1,6 @@
 import unittest
 
-from app.baseline_model import PlayerBaselineModel
+from app.baseline_model import PlayerBaselineModel, clean_features
 
 
 class PlayerBaselineModelTests(unittest.TestCase):
@@ -46,6 +46,37 @@ class PlayerBaselineModelTests(unittest.TestCase):
         self.assertGreater(prediction["fantasy_points"], prediction["projected_points"])
         self.assertGreater(prediction["confidence_score"], 0.45)
         self.assertTrue(prediction["factors"])
+
+    def test_age_and_career_context_features_are_used(self):
+        clean = clean_features({
+            "career_stage": "late_career",
+            "age_at_game": 36,
+            "rest_management_risk": 0.65,
+            "fantasy_volatility_score": 15.0,
+            "last_5_points_avg": 18.0,
+        })
+
+        self.assertEqual("late_career", clean["career_stage"])
+        self.assertEqual(36.0, clean["age_at_game"])
+
+        prediction = PlayerBaselineModel().predict({
+            "games_played_prior": 40,
+            "career_stage": "late_career",
+            "age_at_game": 36,
+            "rest_management_risk": 0.65,
+            "injury_history_count_before_game": 4,
+            "fantasy_volatility_score": 15.0,
+            "last_5_points_avg": 18.0,
+            "last_5_rebounds_avg": 5.0,
+            "last_5_assists_avg": 4.0,
+            "last_5_minutes_avg": 30.0,
+        })
+
+        self.assertEqual("high", prediction["risk_level"])
+        factor_names = [factor["name"] for factor in prediction["factors"]]
+        self.assertIn("age_at_game", factor_names)
+        self.assertIn("career_stage", factor_names)
+        self.assertIn("rest_management_risk", factor_names)
 
     def test_evaluate_time_split_reports_holdout_metrics(self):
         rows = [

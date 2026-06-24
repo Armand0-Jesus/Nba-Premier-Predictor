@@ -25,6 +25,16 @@ public class TeamFeatureCalculator {
 
         Map<String, Object> features = new LinkedHashMap<>();
         features.put("games_played_prior", priorTeamGames.size());
+        features.put("average_team_age", target.averageTeamAge());
+        features.put("starter_average_age", target.starterAverageAge());
+        features.put("rotation_average_age", target.rotationAverageAge());
+        features.put("young_team_flag", target.youngTeamFlag());
+        features.put("veteran_team_flag", target.veteranTeamFlag());
+        features.put("team_roster_turnover_score", target.teamRosterTurnoverScore());
+        features.put("team_minutes_vacated_by_departures", target.teamMinutesVacatedByDepartures());
+        features.put("team_usage_vacated_by_departures", target.teamUsageVacatedByDepartures());
+        features.put("team_missing_starters_count", target.teamMissingStartersCount());
+        features.put("projected_starters_available_count", target.projectedStartersAvailableCount());
         features.put("last_3_team_score_avg", averageLast(priorTeamGames, 3, TeamFeatureRow::teamScore));
         features.put("last_5_team_score_avg", averageLast(priorTeamGames, 5, TeamFeatureRow::teamScore));
         features.put("last_10_team_score_avg", averageLast(priorTeamGames, 10, TeamFeatureRow::teamScore));
