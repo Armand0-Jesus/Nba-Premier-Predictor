@@ -8,7 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record RateLimitProperties(
         boolean enabled,
         int predictionsPerMinute,
-        Duration window) {
+        Duration window,
+        boolean trustForwardedHeaders) {
 
     public RateLimitProperties {
         if (predictionsPerMinute <= 0) {

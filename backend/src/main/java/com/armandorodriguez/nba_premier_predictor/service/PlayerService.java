@@ -1,11 +1,19 @@
 package com.armandorodriguez.nba_premier_predictor.service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Base64;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,21 +26,52 @@ import com.armandorodriguez.nba_premier_predictor.dto.PlayerSummaryResponse;
 import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundException;
 import com.armandorodriguez.nba_premier_predictor.repository.PlayerGameStatsRepository;
 import com.armandorodriguez.nba_premier_predictor.repository.PlayerRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 @Transactional(readOnly = true)
 public class PlayerService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(PlayerService.class);
+    private static final String PLAYER_SEARCH_KEY_PREFIX = "playerSearch:";
+
     private final PlayerRepository playerRepository;
     private final PlayerGameStatsRepository statsRepository;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
+    private final boolean searchCacheEnabled;
+    private final java.time.Duration searchCacheTtl;
 
-    public PlayerService(PlayerRepository playerRepository, PlayerGameStatsRepository statsRepository) {
+    public PlayerService(
+            PlayerRepository playerRepository,
+            PlayerGameStatsRepository statsRepository,
+            StringRedisTemplate redisTemplate,
+            ObjectMapper objectMapper,
+            @Value("${app.search-cache.enabled:true}") boolean searchCacheEnabled,
+            @Value("${app.search-cache.ttl:5m}") java.time.Duration searchCacheTtl) {
         this.playerRepository = playerRepository;
         this.statsRepository = statsRepository;
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.searchCacheEnabled = searchCacheEnabled;
+        this.searchCacheTtl = searchCacheTtl == null || searchCacheTtl.isZero() || searchCacheTtl.isNegative()
+                ? java.time.Duration.ofMinutes(5)
+                : searchCacheTtl;
     }
 
     public Page<PlayerSummaryResponse> search(String query, Pageable pageable) {
-        return playerRepository.search(clean(query), pageable).map(PlayerSummaryResponse::from);
+        String cleanedQuery = clean(query);
+        String cacheKey = playerSearchKey(cleanedQuery, pageable);
+        if (searchCacheEnabled) {
+            Page<PlayerSummaryResponse> cached = cachedPlayerSearch(cacheKey, pageable);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        Page<PlayerSummaryResponse> page = playerRepository.search(cleanedQuery, pageable).map(PlayerSummaryResponse::from);
+        cachePlayerSearch(cacheKey, page);
+        return page;
     }
 
     @Cacheable(cacheNames = "playerDetails", key = "#playerId")
@@ -69,5 +108,62 @@ public class PlayerService {
 
     private static String clean(String query) {
         return query == null || query.isBlank() ? null : query.trim();
+    }
+
+    private Page<PlayerSummaryResponse> cachedPlayerSearch(String cacheKey, Pageable pageable) {
+        try {
+            String json = redisTemplate.opsForValue().get(cacheKey);
+            if (json == null) {
+                return null;
+            }
+            return objectMapper.readValue(json, CachedPlayerSearchPage.class).toPage(pageable);
+        } catch (JsonProcessingException | DataAccessException ex) {
+            LOGGER.debug("Player search cache read failed", ex);
+            return null;
+        }
+    }
+
+    private void cachePlayerSearch(String cacheKey, Page<PlayerSummaryResponse> page) {
+        if (!searchCacheEnabled) {
+            return;
+        }
+        try {
+            redisTemplate.opsForValue().set(
+                    cacheKey,
+                    objectMapper.writeValueAsString(CachedPlayerSearchPage.from(page)),
+                    searchCacheTtl);
+        } catch (JsonProcessingException | DataAccessException ex) {
+            LOGGER.debug("Player search cache write failed", ex);
+        }
+    }
+
+    private static String playerSearchKey(String query, Pageable pageable) {
+        String rawKey = "%s|%d|%d|%s".formatted(
+                query == null ? "" : query,
+                pageable.getPageNumber(),
+                pageable.getPageSize(),
+                pageable.getSort());
+        return PLAYER_SEARCH_KEY_PREFIX
+                + Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString(rawKey.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public record CachedPlayerSearchPage(
+            List<PlayerSummaryResponse> content,
+            int pageNumber,
+            int pageSize,
+            long totalElements) {
+
+        static CachedPlayerSearchPage from(Page<PlayerSummaryResponse> page) {
+            return new CachedPlayerSearchPage(
+                    page.getContent(),
+                    page.getNumber(),
+                    page.getSize(),
+                    page.getTotalElements());
+        }
+
+        Page<PlayerSummaryResponse> toPage(Pageable pageable) {
+            return new PageImpl<>(content, pageable, totalElements);
+        }
     }
 }

@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,9 +20,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
+
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
@@ -37,8 +41,11 @@ import com.armandorodriguez.nba_premier_predictor.service.MlPredictionClient;
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=6379",
         "app.rate-limit.enabled=true",
+        "app.rate-limit.trust-forwarded-headers=true",
         "app.rate-limit.predictions-per-minute=2",
-        "app.rate-limit.window=1m"
+        "app.rate-limit.window=1m",
+        "app.prediction-cache.enabled=true",
+        "app.search-cache.enabled=true"
 })
 @Sql(scripts = {"/test-cleanup.sql", "/test-data.sql"}, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
 class RedisIntegrationTests {
@@ -49,9 +56,16 @@ class RedisIntegrationTests {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private StubMlPredictionClient mlPredictionClient;
+
     @BeforeEach
     void clearRedis() {
         redisTemplate.getConnectionFactory().getConnection().serverCommands().flushDb();
+        mlPredictionClient.reset();
     }
 
     @Test
@@ -60,6 +74,45 @@ class RedisIntegrationTests {
                 .andExpect(status().isOk());
 
         assertThat(redisTemplate.hasKey("playerDetails::201939")).isTrue();
+    }
+
+    @Test
+    void playerSearchCacheWritesToRedisAndCanBeReadBack() throws Exception {
+        mockMvc.perform(get("/api/players")
+                        .param("query", "Stephen")
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/players")
+                        .param("query", "Stephen")
+                        .param("page", "0")
+                        .param("size", "20"))
+                .andExpect(status().isOk());
+
+        assertThat(redisTemplate.keys("playerSearch:*")).isNotEmpty();
+    }
+
+    @Test
+    void repeatedIdenticalPredictionUsesFingerprintCacheWithoutDuplicateHistory() throws Exception {
+        mockMvc.perform(post("/api/predictions/player")
+                        .header("X-Forwarded-For", "10.0.0.9")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(playerRequestJson()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.predictionId").isNumber());
+
+        mockMvc.perform(post("/api/predictions/player")
+                        .header("X-Forwarded-For", "10.0.0.9")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(playerRequestJson()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.predictionId").isNumber());
+
+        assertThat(mlPredictionClient.playerPredictionCalls()).isEqualTo(1);
+        assertThat(countRows("predictions")).isEqualTo(1);
+        assertThat(countRows("player_stat_predictions")).isEqualTo(1);
+        assertThat(redisTemplate.keys("prediction:fingerprint:*")).hasSize(1);
     }
 
     @Test
@@ -85,6 +138,10 @@ class RedisIntegrationTests {
         assertThat(redisTemplate.getExpire("rate_limit:predictions:10.0.0.8")).isPositive();
     }
 
+    private Integer countRows(String tableName) {
+        return jdbcTemplate.queryForObject("select count(*) from " + tableName, Integer.class);
+    }
+
     private static String playerRequestJson() {
         return """
                 {
@@ -108,15 +165,18 @@ class RedisIntegrationTests {
 
         @Bean
         @Primary
-        MlPredictionClient mlPredictionClient() {
+        StubMlPredictionClient mlPredictionClient() {
             return new StubMlPredictionClient();
         }
     }
 
     static class StubMlPredictionClient implements MlPredictionClient {
 
+        private final AtomicInteger playerPredictionCalls = new AtomicInteger();
+
         @Override
         public PlayerPredictionResponse predictPlayer(PlayerPredictionRequest request) {
+            playerPredictionCalls.incrementAndGet();
             return prediction(request);
         }
 
@@ -149,9 +209,21 @@ class RedisIntegrationTests {
 
         @Override
         public Map<String, Object> modelVersions() {
-            return Map.of("activeModel", Map.of(
-                    "versionName", "player-baseline-v1",
-                    "modelType", "ridge-regression"));
+            return Map.of(
+                    "activeModel", Map.of(
+                            "versionName", "player-baseline-v1",
+                            "modelType", "ridge-regression"),
+                    "gameScoreModel", Map.of(
+                            "versionName", "game-score-baseline-v1",
+                            "modelType", "ridge-regression"));
+        }
+
+        void reset() {
+            playerPredictionCalls.set(0);
+        }
+
+        int playerPredictionCalls() {
+            return playerPredictionCalls.get();
         }
 
         private static PlayerPredictionResponse prediction(PlayerPredictionRequest request) {

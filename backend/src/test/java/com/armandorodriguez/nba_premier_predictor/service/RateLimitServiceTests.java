@@ -28,7 +28,7 @@ class RateLimitServiceTests {
 
         RateLimitService rateLimitService = new RateLimitService(
                 redisTemplate,
-                new RateLimitProperties(true, 2, Duration.ofMinutes(1)));
+                new RateLimitProperties(true, 2, Duration.ofMinutes(1), false));
 
         rateLimitService.checkPredictionLimit("client 1");
         rateLimitService.checkPredictionLimit("client 1");
@@ -46,7 +46,7 @@ class RateLimitServiceTests {
 
         RateLimitService rateLimitService = new RateLimitService(
                 redisTemplate,
-                new RateLimitProperties(true, 2, Duration.ofMinutes(1)));
+                new RateLimitProperties(true, 2, Duration.ofMinutes(1), false));
 
         assertThrows(RateLimitExceededException.class, () -> rateLimitService.checkPredictionLimit("client"));
     }
@@ -56,7 +56,7 @@ class RateLimitServiceTests {
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
         RateLimitService rateLimitService = new RateLimitService(
                 redisTemplate,
-                new RateLimitProperties(false, 2, Duration.ofMinutes(1)));
+                new RateLimitProperties(false, 2, Duration.ofMinutes(1), false));
 
         rateLimitService.checkPredictionLimit("client");
 

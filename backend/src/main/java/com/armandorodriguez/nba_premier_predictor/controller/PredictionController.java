@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.armandorodriguez.nba_premier_predictor.config.RateLimitProperties;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PredictionHistoryResponse;
@@ -29,10 +30,15 @@ public class PredictionController {
 
     private final PredictionService predictionService;
     private final RateLimitService rateLimitService;
+    private final RateLimitProperties rateLimitProperties;
 
-    public PredictionController(PredictionService predictionService, RateLimitService rateLimitService) {
+    public PredictionController(
+            PredictionService predictionService,
+            RateLimitService rateLimitService,
+            RateLimitProperties rateLimitProperties) {
         this.predictionService = predictionService;
         this.rateLimitService = rateLimitService;
+        this.rateLimitProperties = rateLimitProperties;
     }
 
     @PostMapping("/player")
@@ -59,10 +65,12 @@ public class PredictionController {
         return predictionService.history(limit);
     }
 
-    private static String clientKey(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
+    private String clientKey(HttpServletRequest request) {
+        if (rateLimitProperties.trustForwardedHeaders()) {
+            String forwardedFor = request.getHeader("X-Forwarded-For");
+            if (forwardedFor != null && !forwardedFor.isBlank()) {
+                return forwardedFor.split(",")[0].trim();
+            }
         }
         return request.getRemoteAddr();
     }

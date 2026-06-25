@@ -4,12 +4,15 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
@@ -23,40 +26,67 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class PredictionService {
 
     private final MlPredictionClient mlPredictionClient;
+    private final ModelMetadataService modelMetadataService;
+    private final PredictionCacheService predictionCacheService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
     public PredictionService(
             MlPredictionClient mlPredictionClient,
+            ModelMetadataService modelMetadataService,
+            PredictionCacheService predictionCacheService,
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper) {
         this.mlPredictionClient = mlPredictionClient;
+        this.modelMetadataService = modelMetadataService;
+        this.predictionCacheService = predictionCacheService;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
     }
 
     @Transactional
     public PlayerPredictionResponse predictPlayer(PlayerPredictionRequest request) {
+        String fingerprint = playerFingerprint("player_stat", request);
+        Optional<PlayerPredictionResponse> cached = cachedPlayerPrediction(fingerprint);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
         PlayerPredictionResponse response = mlPredictionClient.predictPlayer(request);
         Long predictionId = savePrediction("player_stat", request, response);
         savePlayerStatPrediction(predictionId, response);
-        return response.withPredictionId(predictionId);
+        PlayerPredictionResponse saved = response.withPredictionId(predictionId);
+        cacheAfterCommit(fingerprint, saved);
+        return saved;
     }
 
     @Transactional
     public PlayerPredictionResponse predictFantasy(PlayerPredictionRequest request) {
+        String fingerprint = playerFingerprint("fantasy", request);
+        Optional<PlayerPredictionResponse> cached = cachedPlayerPrediction(fingerprint);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
         PlayerPredictionResponse response = mlPredictionClient.predictFantasy(request);
         Long predictionId = savePrediction("fantasy", request, response);
         saveFantasyPrediction(predictionId, response);
-        return response.withPredictionId(predictionId);
+        PlayerPredictionResponse saved = response.withPredictionId(predictionId);
+        cacheAfterCommit(fingerprint, saved);
+        return saved;
     }
 
     @Transactional
     public TeamScorePredictionResponse predictGameScore(TeamScorePredictionRequest request) {
+        String fingerprint = gameScoreFingerprint(request);
+        Optional<TeamScorePredictionResponse> cached = cachedGameScorePrediction(fingerprint);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
         TeamScorePredictionResponse response = mlPredictionClient.predictGameScore(request);
         Long predictionId = saveGameScorePredictionParent(request, response);
         saveTeamScorePrediction(predictionId, response);
-        return response.withPredictionId(predictionId);
+        TeamScorePredictionResponse saved = response.withPredictionId(predictionId);
+        cacheAfterCommit(fingerprint, saved);
+        return saved;
     }
 
     public List<PredictionHistoryResponse> history(int limit) {
@@ -127,6 +157,50 @@ public class PredictionService {
         }, keyHolder);
         Object key = keyHolder.getKeys().get("id");
         return ((Number) key).longValue();
+    }
+
+    private String playerFingerprint(String predictionType, PlayerPredictionRequest request) {
+        if (!predictionCacheService.enabled()) {
+            return null;
+        }
+        String modelVersion = ModelMetadataService.playerModelVersion(modelMetadataService.versions());
+        return predictionCacheService.playerFingerprint(predictionType, request, modelVersion);
+    }
+
+    private String gameScoreFingerprint(TeamScorePredictionRequest request) {
+        if (!predictionCacheService.enabled()) {
+            return null;
+        }
+        String modelVersion = ModelMetadataService.gameScoreModelVersion(modelMetadataService.versions());
+        return predictionCacheService.gameScoreFingerprint(request, modelVersion);
+    }
+
+    private Optional<PlayerPredictionResponse> cachedPlayerPrediction(String fingerprint) {
+        return fingerprint == null
+                ? Optional.empty()
+                : predictionCacheService.get(fingerprint, PlayerPredictionResponse.class);
+    }
+
+    private Optional<TeamScorePredictionResponse> cachedGameScorePrediction(String fingerprint) {
+        return fingerprint == null
+                ? Optional.empty()
+                : predictionCacheService.get(fingerprint, TeamScorePredictionResponse.class);
+    }
+
+    private void cacheAfterCommit(String fingerprint, Object response) {
+        if (fingerprint == null) {
+            return;
+        }
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            predictionCacheService.put(fingerprint, response);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                predictionCacheService.put(fingerprint, response);
+            }
+        });
     }
 
     private Long saveGameScorePredictionParent(TeamScorePredictionRequest request, TeamScorePredictionResponse response) {
