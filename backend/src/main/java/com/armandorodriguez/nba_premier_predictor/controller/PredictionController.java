@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PredictionHistoryResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.service.PredictionService;
 
 @Validated
@@ -37,6 +39,11 @@ public class PredictionController {
     @PostMapping("/fantasy")
     PlayerPredictionResponse fantasy(@Valid @RequestBody PlayerPredictionRequest request) {
         return predictionService.predictFantasy(request);
+    }
+
+    @PostMapping("/game-score")
+    TeamScorePredictionResponse gameScore(@Valid @RequestBody TeamScorePredictionRequest request) {
+        return predictionService.predictGameScore(request);
     }
 
     @GetMapping("/history")

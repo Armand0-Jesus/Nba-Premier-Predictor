@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import joblib
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import Ridge
+from sklearn.pipeline import Pipeline
+
+from app.baseline_model import clamp_round, clean_features, example_time, numeric_feature, regression_metrics
+
+
+TARGETS = (
+    ("home_team_score", "homeScore"),
+    ("away_team_score", "awayScore"),
+)
+
+
+@dataclass
+class GameScoreBaselineModel:
+    pipeline: Pipeline | None = None
+    fallback_targets: dict[str, float] = field(default_factory=dict)
+    trained_rows: int = 0
+    model_version: str = "game-score-baseline-v1"
+
+    @classmethod
+    def fit(cls, rows: list[dict[str, Any]]) -> "GameScoreBaselineModel":
+        examples = complete_training_examples(rows)
+        if not examples:
+            raise ValueError("No complete game-score training rows were provided")
+        return cls._fit_examples(examples)
+
+    @classmethod
+    def evaluate_time_split(cls, rows: list[dict[str, Any]], train_ratio: float = 0.8) -> dict[str, Any]:
+        if train_ratio <= 0 or train_ratio >= 1:
+            raise ValueError("train_ratio must be greater than 0 and less than 1")
+
+        examples = complete_training_examples(rows)
+        if len(examples) < 2:
+            raise ValueError("At least two complete game-score training rows are required for evaluation")
+
+        split_index = min(max(int(len(examples) * train_ratio), 1), len(examples) - 1)
+        train_examples = examples[:split_index]
+        test_examples = examples[split_index:]
+        model = cls._fit_examples(train_examples)
+
+        values_by_target: dict[str, list[tuple[float, float]]] = {output_name: [] for output_name, _ in TARGETS}
+        for example in test_examples:
+            prediction = model.predict(example["features"], example["row"].get("homeTeamId"), example["row"].get("awayTeamId"))
+            for index, (output_name, _) in enumerate(TARGETS):
+                values_by_target[output_name].append((prediction[output_name], example["targets"][index]))
+
+        return {
+            "model_version": model.model_version,
+            "train_rows": len(train_examples),
+            "test_rows": len(test_examples),
+            "total_rows": len(examples),
+            "train_ratio": train_ratio,
+            "training_data_start": example_time(train_examples[0]),
+            "training_data_end": example_time(train_examples[-1]),
+            "validation_data_start": example_time(test_examples[0]),
+            "validation_data_end": example_time(test_examples[-1]),
+            "metrics": {
+                output_name: regression_metrics(values)
+                for output_name, values in values_by_target.items()
+            },
+        }
+
+    @classmethod
+    def _fit_examples(cls, examples: list[dict[str, Any]]) -> "GameScoreBaselineModel":
+        features = [example["features"] for example in examples]
+        targets = [example["targets"] for example in examples]
+        pipeline = Pipeline([
+            ("features", DictVectorizer(sparse=False)),
+            ("imputer", SimpleImputer(strategy="constant", fill_value=0.0)),
+            ("model", Ridge(alpha=1.0)),
+        ])
+        pipeline.fit(features, targets)
+
+        fallback_targets = {}
+        for index, (output_name, _) in enumerate(TARGETS):
+            fallback_targets[output_name] = round(sum(row[index] for row in targets) / len(targets), 2)
+
+        return cls(pipeline=pipeline, fallback_targets=fallback_targets, trained_rows=len(examples))
+
+    @classmethod
+    def load(cls, artifact_path: Path) -> "GameScoreBaselineModel":
+        if not artifact_path.exists():
+            return cls()
+        artifact = joblib.load(artifact_path)
+        return cls(
+            pipeline=artifact.get("pipeline"),
+            fallback_targets=artifact.get("fallback_targets", {}),
+            trained_rows=artifact.get("trained_rows", 0),
+            model_version=artifact.get("model_version", "game-score-baseline-v1"),
+        )
+
+    def save(self, artifact_path: Path) -> None:
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump({
+            "pipeline": self.pipeline,
+            "fallback_targets": self.fallback_targets,
+            "trained_rows": self.trained_rows,
+            "model_version": self.model_version,
+        }, artifact_path)
+
+    def predict(self, raw_features: dict[str, Any], home_team_id: int | None, away_team_id: int | None) -> dict[str, Any]:
+        features = clean_features(raw_features)
+        if self.pipeline is None:
+            scores = self._fallback_prediction(features)
+        else:
+            values = self.pipeline.predict([features])[0]
+            scores = {
+                output_name: clamp_round(float(values[index]))
+                for index, (output_name, _) in enumerate(TARGETS)
+            }
+
+        point_differential = round(scores["home_team_score"] - scores["away_team_score"], 2)
+        winner = home_team_id if point_differential >= 0 else away_team_id
+        return {
+            **scores,
+            "predicted_winner_team_id": winner,
+            "point_differential": point_differential,
+            "confidence_score": confidence_score(features, self.pipeline is not None, self.trained_rows, abs(point_differential)),
+            "factors": factors(raw_features),
+        }
+
+    def _fallback_prediction(self, features: dict[str, float | str]) -> dict[str, float]:
+        home = score_average(features, "home", self.fallback_targets.get("home_team_score", 110.0))
+        away = score_average(features, "away", self.fallback_targets.get("away_team_score", 108.0))
+        return {
+            "home_team_score": clamp_round(home),
+            "away_team_score": clamp_round(away),
+        }
+
+
+def complete_training_examples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    examples: list[dict[str, Any]] = []
+    for row in sorted(rows, key=training_row_sort_key):
+        target = row.get("targets", {})
+        values = [target.get(source_name) for _, source_name in TARGETS]
+        if any(value is None for value in values):
+            continue
+        examples.append({
+            "features": clean_features(row.get("features", {})),
+            "targets": [float(value) for value in values],
+            "row": row,
+        })
+    return examples
+
+
+def training_row_sort_key(row: dict[str, Any]) -> tuple[str, str]:
+    return (
+        str(row.get("gameDateTime") or ""),
+        str(row.get("gameId") or ""),
+    )
+
+
+def score_average(features: dict[str, float | str], side: str, fallback: float) -> float:
+    candidates = [
+        numeric_feature(features, f"{side}_last_5_team_score_avg"),
+        numeric_feature(features, f"{side}_last_3_team_score_avg"),
+        numeric_feature(features, f"{side}_season_team_score_avg"),
+        numeric_feature(features, f"{side}_home_team_score_avg"),
+        numeric_feature(features, f"{side}_away_team_score_avg"),
+    ]
+    values = [value for value in candidates if value is not None]
+    return sum(values) / len(values) if values else fallback
+
+
+def confidence_score(features: dict[str, float | str], trained: bool, trained_rows: int, spread: float) -> float:
+    base = 0.58 if trained else 0.42
+    sample_bonus = min(trained_rows, 5000) / 25000
+    context_bonus = min(
+        numeric_feature(features, "home_games_played_prior", 0)
+        + numeric_feature(features, "away_games_played_prior", 0),
+        40,
+    ) / 200
+    spread_bonus = min(spread, 20) / 200
+    return round(min(0.95, max(0.05, base + sample_bonus + context_bonus + spread_bonus)), 4)
+
+
+def factors(raw_features: dict[str, Any]) -> list[dict[str, Any]]:
+    preferred = (
+        "home_last_5_team_score_avg",
+        "away_last_5_team_score_avg",
+        "home_season_point_differential_avg",
+        "away_season_point_differential_avg",
+        "season_point_differential_delta",
+        "last_5_point_differential_delta",
+        "home_days_rest",
+        "away_days_rest",
+        "home_team_missing_starters_count",
+        "away_team_missing_starters_count",
+        "home_average_team_age",
+        "away_average_team_age",
+    )
+    return [
+        {"name": key, "value": raw_features[key]}
+        for key in preferred
+        if key in raw_features and raw_features[key] is not None
+    ][:8]

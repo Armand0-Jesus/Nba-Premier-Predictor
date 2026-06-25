@@ -85,6 +85,41 @@ class TrainingDataIntegrationTests {
                 .containsEntry("playerId", 201939);
     }
 
+    @Test
+    void returnsGameScoreTrainingRowsFromGameFeatureSnapshotsAndActualScores() throws Exception {
+        mockMvc.perform(post("/api/features/game-snapshots/generate").param("season", "2023"))
+                .andExpect(status().isOk());
+
+        String responseJson = mockMvc.perform(get("/api/training-data/game-scores")
+                        .param("season", "2023")
+                        .param("limit", "10"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        List<Map<String, Object>> rows = objectMapper.readValue(responseJson, new TypeReference<>() {
+        });
+
+        assertThat(rows).hasSize(3);
+        Map<String, Object> lastRow = rows.get(2);
+        assertThat(lastRow)
+                .containsEntry("gameId", 22300003)
+                .containsEntry("homeTeamId", 1610612744)
+                .containsEntry("awayTeamId", 1610612747);
+
+        Map<String, Object> features = nestedMap(lastRow, "features");
+        Map<String, Object> targets = nestedMap(lastRow, "targets");
+        assertThat(features)
+                .containsEntry("home_team_id", 1610612744)
+                .containsEntry("away_team_id", 1610612747)
+                .containsEntry("season_point_differential_delta", 15.0);
+        assertThat(targets)
+                .containsEntry("homeScore", 130)
+                .containsEntry("awayScore", 120)
+                .containsEntry("winnerTeamId", 1610612744)
+                .containsEntry("pointDifferential", 10);
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> nestedMap(Map<String, Object> row, String key) {
         return (Map<String, Object>) row.get(key);

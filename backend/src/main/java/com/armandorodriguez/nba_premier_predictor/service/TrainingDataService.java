@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerTrainingDataRow;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerTrainingTargets;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScoreTrainingDataRow;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScoreTrainingTargets;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,6 +50,22 @@ public class TrainingDataService {
                 """, this::mapRow, seasonStartYear, seasonStartYear, limit, offset);
     }
 
+    public List<TeamScoreTrainingDataRow> gameScoreRows(Integer seasonStartYear, int limit, int offset) {
+        return jdbcTemplate.query("""
+                select f.game_id, g.home_team_id, g.away_team_id, g.season_start_year,
+                       g.game_date_time_est, f.data_cutoff_time, f.features,
+                       g.home_score, g.away_score, g.winner_team_id
+                from game_feature_snapshots f
+                join games g on g.game_id = f.game_id
+                where (? is null or g.season_start_year = ?)
+                  and g.home_score is not null
+                  and g.away_score is not null
+                order by g.game_date_time_est, f.game_id
+                limit ?
+                offset ?
+                """, this::mapGameScoreRow, seasonStartYear, seasonStartYear, limit, offset);
+    }
+
     private PlayerTrainingDataRow mapRow(ResultSet rs, int rowNum) throws SQLException {
         Integer points = nullableInt(rs, "points");
         Integer rebounds = nullableInt(rs, "rebounds_total");
@@ -73,6 +91,24 @@ public class TrainingDataService {
                         turnovers,
                         rs.getBigDecimal("num_minutes"),
                         fantasyPoints(points, rebounds, assists, steals, blocks, turnovers)));
+    }
+
+    private TeamScoreTrainingDataRow mapGameScoreRow(ResultSet rs, int rowNum) throws SQLException {
+        Integer homeScore = nullableInt(rs, "home_score");
+        Integer awayScore = nullableInt(rs, "away_score");
+        return new TeamScoreTrainingDataRow(
+                rs.getLong("game_id"),
+                nullableLong(rs, "home_team_id"),
+                nullableLong(rs, "away_team_id"),
+                nullableInt(rs, "season_start_year"),
+                rs.getTimestamp("game_date_time_est").toLocalDateTime(),
+                rs.getTimestamp("data_cutoff_time").toLocalDateTime(),
+                readFeatures(rs.getString("features")),
+                new TeamScoreTrainingTargets(
+                        homeScore,
+                        awayScore,
+                        nullableLong(rs, "winner_team_id"),
+                        homeScore == null || awayScore == null ? null : homeScore - awayScore));
     }
 
     private Map<String, Object> readFeatures(String featuresJson) {

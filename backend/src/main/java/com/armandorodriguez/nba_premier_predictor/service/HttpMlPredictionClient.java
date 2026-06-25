@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.exception.MlServiceException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -45,6 +47,16 @@ class HttpMlPredictionClient implements MlPredictionClient {
     @Override
     public PlayerPredictionResponse predictFantasy(PlayerPredictionRequest request) {
         return postPrediction("/predict/fantasy", request);
+    }
+
+    @Override
+    public TeamScorePredictionResponse predictGameScore(TeamScorePredictionRequest request) {
+        try {
+            HttpResponse<String> response = send("POST", "/predict/game-score", gameScorePredictionBody(request));
+            return objectMapper.readValue(response.body(), TeamScorePredictionResponse.class);
+        } catch (JsonProcessingException ex) {
+            throw new MlServiceException("Could not parse ML game-score response", ex);
+        }
     }
 
     @Override
@@ -111,6 +123,20 @@ class HttpMlPredictionClient implements MlPredictionClient {
             return objectMapper.writeValueAsString(body);
         } catch (JsonProcessingException ex) {
             throw new MlServiceException("Could not serialize ML prediction request", ex);
+        }
+    }
+
+    private String gameScorePredictionBody(TeamScorePredictionRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("game_id", request.gameId());
+        body.put("home_team_id", request.homeTeamId());
+        body.put("away_team_id", request.awayTeamId());
+        body.put("data_cutoff_time", request.dataCutoffTime() == null ? null : request.dataCutoffTime().toString());
+        body.put("features", request.features());
+        try {
+            return objectMapper.writeValueAsString(body);
+        } catch (JsonProcessingException ex) {
+            throw new MlServiceException("Could not serialize ML game-score request", ex);
         }
     }
 }

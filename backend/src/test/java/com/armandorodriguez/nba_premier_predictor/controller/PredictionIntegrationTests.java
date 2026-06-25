@@ -24,6 +24,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.service.MlPredictionClient;
 
 @ActiveProfiles("test")
@@ -81,6 +83,33 @@ class PredictionIntegrationTests {
     }
 
     @Test
+    void predictsGameScoreThroughMlServiceAndStoresTeamScoreHistory() throws Exception {
+        mockMvc.perform(post("/api/predictions/game-score")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(gameScoreRequestJson()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.predictionId").isNumber())
+                .andExpect(jsonPath("$.modelVersion").value("game-score-baseline-v1"))
+                .andExpect(jsonPath("$.homeTeamScore").value(116.5))
+                .andExpect(jsonPath("$.awayTeamScore").value(108.2))
+                .andExpect(jsonPath("$.predictedWinnerTeamId").value(1610612744))
+                .andExpect(jsonPath("$.pointDifferential").value(8.3));
+
+        assertThat(countRows("predictions")).isEqualTo(1);
+        assertThat(countRows("team_score_predictions")).isEqualTo(1);
+        assertThat(countRows("model_versions")).isEqualTo(1);
+
+        mockMvc.perform(get("/api/predictions/history").param("limit", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].predictionType").value("game_score"))
+                .andExpect(jsonPath("$[0].homeTeamScore").value(116.5))
+                .andExpect(jsonPath("$[0].awayTeamScore").value(108.2))
+                .andExpect(jsonPath("$[0].predictedWinnerTeamId").value(1610612744))
+                .andExpect(jsonPath("$[0].pointDifferential").value(8.3))
+                .andExpect(jsonPath("$[0].modelVersion").value("game-score-baseline-v1"));
+    }
+
+    @Test
     void rejectsPredictionRequestsWithoutFeatures() throws Exception {
         mockMvc.perform(post("/api/predictions/player")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -90,6 +119,22 @@ class PredictionIntegrationTests {
                                   "playerId": 201939,
                                   "teamId": 1610612744,
                                   "features": {}
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsGameScorePredictionRequestsWithoutTeams() throws Exception {
+        mockMvc.perform(post("/api/predictions/game-score")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "gameId": 22300003,
+                                  "homeTeamId": 1610612744,
+                                  "features": {
+                                    "home_last_5_team_score_avg": 105.0
+                                  }
                                 }
                                 """))
                 .andExpect(status().isBadRequest());
@@ -130,6 +175,24 @@ class PredictionIntegrationTests {
                 """;
     }
 
+    private static String gameScoreRequestJson() {
+        return """
+                {
+                  "gameId": 22300003,
+                  "homeTeamId": 1610612744,
+                  "awayTeamId": 1610612747,
+                  "dataCutoffTime": "2024-01-05T21:59:59",
+                  "features": {
+                    "home_games_played_prior": 2,
+                    "away_games_played_prior": 2,
+                    "home_last_5_team_score_avg": 105.0,
+                    "away_last_5_team_score_avg": 97.5,
+                    "season_point_differential_delta": 15.0
+                  }
+                }
+                """;
+    }
+
     @TestConfiguration
     static class StubMlClientConfig {
 
@@ -150,6 +213,23 @@ class PredictionIntegrationTests {
         @Override
         public PlayerPredictionResponse predictFantasy(PlayerPredictionRequest request) {
             return prediction(request);
+        }
+
+        @Override
+        public TeamScorePredictionResponse predictGameScore(TeamScorePredictionRequest request) {
+            return new TeamScorePredictionResponse(
+                    null,
+                    "game-score-baseline-v1",
+                    1200,
+                    request.gameId(),
+                    request.homeTeamId(),
+                    request.awayTeamId(),
+                    116.5,
+                    108.2,
+                    request.homeTeamId(),
+                    8.3,
+                    0.72,
+                    List.of(Map.of("name", "season_point_differential_delta", "value", 15.0)));
         }
 
         @Override

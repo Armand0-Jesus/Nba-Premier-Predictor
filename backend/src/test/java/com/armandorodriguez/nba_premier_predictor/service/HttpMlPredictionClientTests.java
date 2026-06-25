@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 
@@ -72,6 +73,58 @@ class HttpMlPredictionClientTests {
                     .contains("\"player_id\":201939")
                     .contains("\"data_cutoff_time\":\"2024-01-05T21:59:59\"")
                     .contains("\"features\":{\"last_5_points_avg\":15.0}");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void postsGameScorePredictionBodyAsJson() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/predict/game-score", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] response = """
+                    {
+                      "model_version": "game-score-baseline-v1",
+                      "trained_rows": 1,
+                      "game_id": 22300003,
+                      "home_team_id": 1610612744,
+                      "away_team_id": 1610612747,
+                      "home_team_score": 116.5,
+                      "away_team_score": 108.2,
+                      "predicted_winner_team_id": 1610612744,
+                      "point_differential": 8.3,
+                      "confidence_score": 0.72,
+                      "factors": []
+                    }
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            HttpMlPredictionClient client = new HttpMlPredictionClient(
+                    "http://localhost:" + server.getAddress().getPort(),
+                    new ObjectMapper());
+
+            var response = client.predictGameScore(new TeamScorePredictionRequest(
+                    22300003L,
+                    1610612744L,
+                    1610612747L,
+                    LocalDateTime.parse("2024-01-05T21:59:59"),
+                    Map.of("season_point_differential_delta", 15.0)));
+
+            assertThat(response.homeTeamScore()).isEqualTo(116.5);
+            assertThat(response.predictedWinnerTeamId()).isEqualTo(1610612744L);
+            assertThat(requestBody.get())
+                    .contains("\"home_team_id\":1610612744")
+                    .contains("\"away_team_id\":1610612747")
+                    .contains("\"data_cutoff_time\":\"2024-01-05T21:59:59\"")
+                    .contains("\"features\":{\"season_point_differential_delta\":15.0}");
         } finally {
             server.stop(0);
         }

@@ -14,6 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PredictionHistoryResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -49,17 +51,28 @@ public class PredictionService {
         return response.withPredictionId(predictionId);
     }
 
+    @Transactional
+    public TeamScorePredictionResponse predictGameScore(TeamScorePredictionRequest request) {
+        TeamScorePredictionResponse response = mlPredictionClient.predictGameScore(request);
+        Long predictionId = saveGameScorePredictionParent(request, response);
+        saveTeamScorePrediction(predictionId, response);
+        return response.withPredictionId(predictionId);
+    }
+
     public List<PredictionHistoryResponse> history(int limit) {
         return jdbcTemplate.query("""
                 select p.id, p.prediction_type, p.game_id, p.player_id, p.team_id,
                        mv.version_name, p.requested_at, p.confidence_score,
                        ps.projected_points, ps.projected_rebounds, ps.projected_assists,
                        ps.projected_minutes, fp.fantasy_points, fp.floor_projection,
-                       fp.ceiling_projection, fp.risk_level
+                       fp.ceiling_projection, fp.risk_level,
+                       tsp.home_team_score, tsp.away_team_score,
+                       tsp.predicted_winner_team_id, tsp.point_differential
                 from predictions p
                 left join model_versions mv on mv.id = p.model_version_id
                 left join player_stat_predictions ps on ps.prediction_id = p.id
                 left join fantasy_predictions fp on fp.prediction_id = p.id
+                left join team_score_predictions tsp on tsp.prediction_id = p.id
                 order by p.requested_at desc, p.id desc
                 limit ?
                 """, (rs, rowNum) -> new PredictionHistoryResponse(
@@ -78,11 +91,15 @@ public class PredictionService {
                 nullableDouble(rs, "fantasy_points"),
                 nullableDouble(rs, "floor_projection"),
                 nullableDouble(rs, "ceiling_projection"),
-                rs.getString("risk_level")), limit);
+                rs.getString("risk_level"),
+                nullableDouble(rs, "home_team_score"),
+                nullableDouble(rs, "away_team_score"),
+                nullableLong(rs, "predicted_winner_team_id"),
+                nullableDouble(rs, "point_differential")), limit);
     }
 
     private Long savePrediction(String predictionType, PlayerPredictionRequest request, PlayerPredictionResponse response) {
-        Long modelVersionId = ensureModelVersion(response.modelVersion());
+        Long modelVersionId = ensureModelVersion(response.modelVersion(), "player_stat_fantasy");
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement("""
@@ -95,6 +112,34 @@ public class PredictionService {
             setLong(ps, 2, request.gameId());
             ps.setLong(3, request.playerId());
             setLong(ps, 4, request.teamId());
+            ps.setLong(5, modelVersionId);
+            if (request.dataCutoffTime() == null) {
+                ps.setTimestamp(6, null);
+            } else {
+                ps.setTimestamp(6, Timestamp.valueOf(request.dataCutoffTime()));
+            }
+            setDouble(ps, 7, response.confidenceScore());
+            ps.setString(8, writeJson(response.factors()));
+            return ps;
+        }, keyHolder);
+        Object key = keyHolder.getKeys().get("id");
+        return ((Number) key).longValue();
+    }
+
+    private Long saveGameScorePredictionParent(TeamScorePredictionRequest request, TeamScorePredictionResponse response) {
+        Long modelVersionId = ensureModelVersion(response.modelVersion(), "game_score");
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement("""
+                    insert into predictions (
+                        prediction_type, game_id, player_id, team_id, model_version_id,
+                        data_cutoff_time, confidence_score, explanation
+                    ) values (?, ?, ?, ?, ?, ?, ?, cast(? as jsonb))
+                    """, Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, "game_score");
+            ps.setLong(2, request.gameId());
+            ps.setObject(3, null);
+            ps.setObject(4, null);
             ps.setLong(5, modelVersionId);
             if (request.dataCutoffTime() == null) {
                 ps.setTimestamp(6, null);
@@ -138,7 +183,21 @@ public class PredictionService {
                 "{}");
     }
 
-    private Long ensureModelVersion(String versionName) {
+    private void saveTeamScorePrediction(Long predictionId, TeamScorePredictionResponse response) {
+        jdbcTemplate.update("""
+                insert into team_score_predictions (
+                    prediction_id, home_team_score, away_team_score,
+                    predicted_winner_team_id, point_differential
+                ) values (?, ?, ?, ?, ?)
+                """,
+                predictionId,
+                response.homeTeamScore(),
+                response.awayTeamScore(),
+                response.predictedWinnerTeamId(),
+                response.pointDifferential());
+    }
+
+    private Long ensureModelVersion(String versionName, String targetVariable) {
         List<Long> existing = jdbcTemplate.queryForList(
                 "select id from model_versions where version_name = ?",
                 Long.class,
@@ -150,7 +209,7 @@ public class PredictionService {
                 insert into model_versions (
                     version_name, model_type, target_variable, status, is_active
                 ) values (?, ?, ?, ?, ?)
-                """, versionName, "ridge-regression", "player_stat_fantasy", "active", true);
+                """, versionName, "ridge-regression", targetVariable, "active", true);
         return jdbcTemplate.queryForObject(
                 "select id from model_versions where version_name = ?",
                 Long.class,

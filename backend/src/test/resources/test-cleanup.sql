@@ -69,6 +69,14 @@ create table if not exists player_stat_predictions (
     projected_minutes numeric(6,2)
 );
 
+create table if not exists team_score_predictions (
+    prediction_id bigint primary key,
+    home_team_score numeric(6,2),
+    away_team_score numeric(6,2),
+    predicted_winner_team_id bigint,
+    point_differential numeric(6,2)
+);
+
 create table if not exists fantasy_predictions (
     prediction_id bigint primary key,
     fantasy_points numeric(6,2),
@@ -145,6 +153,7 @@ delete from draft_picks;
 delete from transactions;
 delete from roster_snapshots;
 delete from fantasy_predictions;
+delete from team_score_predictions;
 delete from player_stat_predictions;
 delete from predictions;
 delete from model_versions;

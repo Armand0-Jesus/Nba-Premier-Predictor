@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerTrainingDataRow;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamScoreTrainingDataRow;
 import com.armandorodriguez.nba_premier_predictor.service.TrainingDataService;
 
 @Validated
@@ -30,5 +31,13 @@ public class TrainingDataController {
             @RequestParam(defaultValue = "1000") @Min(1) @Max(10000) int limit,
             @RequestParam(defaultValue = "0") @Min(0) @Max(1000000) int offset) {
         return trainingDataService.playerStatRows(season, limit, offset);
+    }
+
+    @GetMapping("/game-scores")
+    List<TeamScoreTrainingDataRow> gameScores(
+            @RequestParam(required = false) Integer season,
+            @RequestParam(defaultValue = "1000") @Min(1) @Max(10000) int limit,
+            @RequestParam(defaultValue = "0") @Min(0) @Max(1000000) int offset) {
+        return trainingDataService.gameScoreRows(season, limit, offset);
     }
 }
