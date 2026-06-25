@@ -2,6 +2,7 @@ package com.armandorodriguez.nba_premier_predictor.controller;
 
 import java.util.Map;
 
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,12 +20,14 @@ public class ModelController {
     }
 
     @GetMapping("/metrics")
-    Map<String, Object> metrics() {
+    @Cacheable(cacheNames = "modelMetrics", key = "'latest'")
+    public Map<String, Object> metrics() {
         return mlPredictionClient.modelMetrics();
     }
 
     @GetMapping("/versions")
-    Map<String, Object> versions() {
+    @Cacheable(cacheNames = "modelVersions", key = "'latest'")
+    public Map<String, Object> versions() {
         return mlPredictionClient.modelVersions();
     }
 }

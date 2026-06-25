@@ -1,17 +1,19 @@
-name: Backend CI
+name: CI
 
 on:
   push:
     paths:
       - "backend/**"
+      - "ml-service/**"
       - ".github/workflows/backend-tests.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "ml-service/**"
       - ".github/workflows/backend-tests.yml"
 
 jobs:
-  test:
+  backend-tests:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,3 +30,27 @@ jobs:
       - name: Run backend tests
         working-directory: backend
         run: mvn -B test
+
+  ml-service-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ml-service/requirements.txt
+
+      - name: Install ML service dependencies
+        working-directory: ml-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run ML service tests
+        working-directory: ml-service
+        run: python -m unittest discover -s tests

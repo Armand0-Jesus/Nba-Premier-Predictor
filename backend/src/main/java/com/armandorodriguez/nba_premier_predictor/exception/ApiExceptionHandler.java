@@ -23,6 +23,11 @@ class ApiExceptionHandler {
         return error(HttpStatus.BAD_GATEWAY, ex.getMessage());
     }
 
+    @ExceptionHandler(RateLimitExceededException.class)
+    ResponseEntity<Map<String, Object>> rateLimit(RateLimitExceededException ex) {
+        return error(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<Map<String, Object>> validation(MethodArgumentNotValidException ex) {
         return error(HttpStatus.BAD_REQUEST, "Request validation failed");

@@ -1,5 +1,6 @@
 package com.armandorodriguez.nba_premier_predictor.service;
 
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class GameService {
         return gameRepository.search(season, teamId, clean(gameType), pageable).map(GameResponse::from);
     }
 
+    @Cacheable(cacheNames = "gameDetails", key = "#gameId")
     public GameResponse get(Long gameId) {
         return gameRepository.findById(gameId)
                 .map(GameResponse::from)

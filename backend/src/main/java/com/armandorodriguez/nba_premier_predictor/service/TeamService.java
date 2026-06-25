@@ -2,6 +2,7 @@ package com.armandorodriguez.nba_premier_predictor.service;
 
 import java.util.List;
 
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -32,10 +33,12 @@ public class TeamService {
         return teamRepository.search(clean(query), pageable).map(TeamResponse::from);
     }
 
+    @Cacheable(cacheNames = "teamDetails", key = "#teamId")
     public TeamResponse get(Long teamId) {
         return TeamResponse.from(findTeam(teamId));
     }
 
+    @Cacheable(cacheNames = "teamDashboards", key = "#teamId + ':' + (#season == null ? 'all' : #season)")
     public TeamDashboardResponse dashboard(Long teamId, Integer season) {
         Team team = findTeam(teamId);
         List<TeamGameLogResponse> recentGames = statsRepository

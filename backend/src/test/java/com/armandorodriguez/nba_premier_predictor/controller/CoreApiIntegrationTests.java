@@ -1,13 +1,16 @@
 package com.armandorodriguez.nba_premier_predictor.controller;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cache.CacheManager;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
@@ -21,6 +24,14 @@ class CoreApiIntegrationTests {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private CacheManager cacheManager;
+
+    @BeforeEach
+    void clearCaches() {
+        cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
+    }
 
     @Test
     void playersEndpointReturnsSearchResults() throws Exception {
@@ -40,6 +51,14 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.firstName").value("Stephen"))
                 .andExpect(jsonPath("$.lastName").value("Curry"))
                 .andExpect(jsonPath("$.draftYear").value(2009));
+    }
+
+    @Test
+    void playerDetailEndpointPopulatesCache() throws Exception {
+        mockMvc.perform(get("/api/players/201939"))
+                .andExpect(status().isOk());
+
+        assertThat(cacheManager.getCache("playerDetails").get(201939L)).isNotNull();
     }
 
     @Test

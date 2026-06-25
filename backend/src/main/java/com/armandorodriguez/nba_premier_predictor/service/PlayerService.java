@@ -2,6 +2,7 @@ package com.armandorodriguez.nba_premier_predictor.service;
 
 import java.util.List;
 
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -34,6 +35,7 @@ public class PlayerService {
         return playerRepository.search(clean(query), pageable).map(PlayerSummaryResponse::from);
     }
 
+    @Cacheable(cacheNames = "playerDetails", key = "#playerId")
     public PlayerDetailResponse get(Long playerId) {
         return PlayerDetailResponse.from(findPlayer(playerId));
     }
@@ -43,11 +45,13 @@ public class PlayerService {
         return statsRepository.findGameLogs(playerId, season, pageable).map(PlayerGameLogResponse::from);
     }
 
+    @Cacheable(cacheNames = "playerAverages", key = "#playerId + ':' + (#season == null ? 'all' : #season)")
     public PlayerAveragesResponse averages(Long playerId, Integer season) {
         findPlayer(playerId);
         return PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));
     }
 
+    @Cacheable(cacheNames = "playerDashboards", key = "#playerId + ':' + (#season == null ? 'all' : #season)")
     public PlayerDashboardResponse dashboard(Long playerId, Integer season) {
         Player player = findPlayer(playerId);
         PlayerAveragesResponse averages = PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));
