@@ -95,6 +95,27 @@ class PlayerBaselineModelTests(unittest.TestCase):
         self.assertIn("projected_points", evaluation["metrics"])
         self.assertIn("mae", evaluation["metrics"]["fantasy_points"])
         self.assertIn("rmse", evaluation["metrics"]["fantasy_points"])
+        self.assertEqual("time_grouped_by_game_datetime", evaluation["split_strategy"])
+        self.assertIn("feature_average", evaluation["baseline_metrics"])
+        self.assertIn("training_mean", evaluation["baseline_metrics"])
+        self.assertIn("fantasy_points", evaluation["baseline_metrics"]["feature_average"])
+
+    def test_evaluate_time_split_keeps_same_timestamp_on_one_side(self):
+        rows = [
+            training_row(10, 4, 3, 28, 19.3, "2023-10-01T19:00:00"),
+            training_row(12, 5, 4, 29, 23.0, "2023-10-01T19:00:00"),
+            training_row(20, 6, 5, 32, 36.7, "2023-10-02T19:00:00"),
+            training_row(24, 8, 7, 34, 44.1, "2023-10-02T19:00:00"),
+        ]
+
+        evaluation = PlayerBaselineModel.evaluate_time_split(rows, train_ratio=0.5)
+
+        self.assertEqual(2, evaluation["train_rows"])
+        self.assertEqual(2, evaluation["test_rows"])
+        self.assertEqual(1, evaluation["train_groups"])
+        self.assertEqual(1, evaluation["test_groups"])
+        self.assertEqual("2023-10-01T19:00:00", evaluation["training_data_end"])
+        self.assertEqual("2023-10-02T19:00:00", evaluation["validation_data_start"])
 
 
 def training_row(points, rebounds, assists, minutes, fantasy_points, game_time=None):

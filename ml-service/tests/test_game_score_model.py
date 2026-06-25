@@ -50,6 +50,25 @@ class GameScoreBaselineModelTests(unittest.TestCase):
         self.assertEqual(1, evaluation["test_rows"])
         self.assertIn("home_team_score", evaluation["metrics"])
         self.assertIn("away_team_score", evaluation["metrics"])
+        self.assertEqual("time_grouped_by_game_datetime", evaluation["split_strategy"])
+        self.assertIn("feature_average", evaluation["baseline_metrics"])
+        self.assertIn("training_mean", evaluation["baseline_metrics"])
+        self.assertIn("home_team_score", evaluation["baseline_metrics"]["feature_average"])
+
+    def test_evaluate_time_split_keeps_same_timestamp_on_one_side(self):
+        evaluation = GameScoreBaselineModel.evaluate_time_split([
+            training_row(100, 90, "2024-01-01T22:00:00"),
+            training_row(110, 105, "2024-01-01T22:00:00"),
+            training_row(130, 120, "2024-01-05T22:00:00"),
+            training_row(118, 115, "2024-01-05T22:00:00"),
+        ], train_ratio=0.5)
+
+        self.assertEqual(2, evaluation["train_rows"])
+        self.assertEqual(2, evaluation["test_rows"])
+        self.assertEqual(1, evaluation["train_groups"])
+        self.assertEqual(1, evaluation["test_groups"])
+        self.assertEqual("2024-01-01T22:00:00", evaluation["training_data_end"])
+        self.assertEqual("2024-01-05T22:00:00", evaluation["validation_data_start"])
 
 
 def training_row(home_score, away_score, game_time):

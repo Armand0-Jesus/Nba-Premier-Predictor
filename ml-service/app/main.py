@@ -90,11 +90,15 @@ class EvaluationResponse(BaseModel):
     test_rows: int
     total_rows: int
     train_ratio: float
+    split_strategy: str | None = None
+    train_groups: int | None = None
+    test_groups: int | None = None
     training_data_start: str | None
     training_data_end: str | None
     validation_data_start: str | None
     validation_data_end: str | None
     metrics: dict[str, dict[str, float]]
+    baseline_metrics: dict[str, dict[str, dict[str, float]]] = Field(default_factory=dict)
 
 
 @app.get("/health")

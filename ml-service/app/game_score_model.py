@@ -10,7 +10,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 
-from app.baseline_model import clamp_round, clean_features, example_time, numeric_feature, regression_metrics
+from app.baseline_model import clamp_round, clean_features, example_time, numeric_feature, regression_metrics, split_time_groups
 
 
 TARGETS = (
@@ -42,16 +42,22 @@ class GameScoreBaselineModel:
         if len(examples) < 2:
             raise ValueError("At least two complete game-score training rows are required for evaluation")
 
-        split_index = min(max(int(len(examples) * train_ratio), 1), len(examples) - 1)
-        train_examples = examples[:split_index]
-        test_examples = examples[split_index:]
+        train_examples, test_examples, train_groups, test_groups = split_time_groups(examples, train_ratio)
         model = cls._fit_examples(train_examples)
 
         values_by_target: dict[str, list[tuple[float, float]]] = {output_name: [] for output_name, _ in TARGETS}
+        baseline_values: dict[str, dict[str, list[tuple[float, float]]]] = {
+            "feature_average": {output_name: [] for output_name, _ in TARGETS},
+            "training_mean": {output_name: [] for output_name, _ in TARGETS},
+        }
         for example in test_examples:
             prediction = model.predict(example["features"], example["row"].get("homeTeamId"), example["row"].get("awayTeamId"))
+            feature_average_prediction = model._fallback_prediction(example["features"])
             for index, (output_name, _) in enumerate(TARGETS):
-                values_by_target[output_name].append((prediction[output_name], example["targets"][index]))
+                actual = example["targets"][index]
+                values_by_target[output_name].append((prediction[output_name], actual))
+                baseline_values["feature_average"][output_name].append((feature_average_prediction[output_name], actual))
+                baseline_values["training_mean"][output_name].append((model.fallback_targets[output_name], actual))
 
         return {
             "model_version": model.model_version,
@@ -59,6 +65,9 @@ class GameScoreBaselineModel:
             "test_rows": len(test_examples),
             "total_rows": len(examples),
             "train_ratio": train_ratio,
+            "split_strategy": "time_grouped_by_game_datetime",
+            "train_groups": train_groups,
+            "test_groups": test_groups,
             "training_data_start": example_time(train_examples[0]),
             "training_data_end": example_time(train_examples[-1]),
             "validation_data_start": example_time(test_examples[0]),
@@ -66,6 +75,13 @@ class GameScoreBaselineModel:
             "metrics": {
                 output_name: regression_metrics(values)
                 for output_name, values in values_by_target.items()
+            },
+            "baseline_metrics": {
+                baseline_name: {
+                    output_name: regression_metrics(values)
+                    for output_name, values in target_values.items()
+                }
+                for baseline_name, target_values in baseline_values.items()
             },
         }
 

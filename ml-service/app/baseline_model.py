@@ -44,16 +44,22 @@ class PlayerBaselineModel:
         if len(examples) < 2:
             raise ValueError("At least two complete player training rows are required for evaluation")
 
-        split_index = min(max(int(len(examples) * train_ratio), 1), len(examples) - 1)
-        train_examples = examples[:split_index]
-        test_examples = examples[split_index:]
+        train_examples, test_examples, train_groups, test_groups = split_time_groups(examples, train_ratio)
         model = cls._fit_examples(train_examples)
 
         values_by_target: dict[str, list[tuple[float, float]]] = {output_name: [] for output_name, _ in TARGETS}
+        baseline_values: dict[str, dict[str, list[tuple[float, float]]]] = {
+            "feature_average": {output_name: [] for output_name, _ in TARGETS},
+            "training_mean": {output_name: [] for output_name, _ in TARGETS},
+        }
         for example in test_examples:
             prediction = model.predict(example["features"])
+            feature_average_prediction = model._fallback_prediction(example["features"])
             for index, (output_name, _) in enumerate(TARGETS):
-                values_by_target[output_name].append((prediction[output_name], example["targets"][index]))
+                actual = example["targets"][index]
+                values_by_target[output_name].append((prediction[output_name], actual))
+                baseline_values["feature_average"][output_name].append((feature_average_prediction[output_name], actual))
+                baseline_values["training_mean"][output_name].append((model.fallback_targets[output_name], actual))
 
         return {
             "model_version": model.model_version,
@@ -61,6 +67,9 @@ class PlayerBaselineModel:
             "test_rows": len(test_examples),
             "total_rows": len(examples),
             "train_ratio": train_ratio,
+            "split_strategy": "time_grouped_by_game_datetime",
+            "train_groups": train_groups,
+            "test_groups": test_groups,
             "training_data_start": example_time(train_examples[0]),
             "training_data_end": example_time(train_examples[-1]),
             "validation_data_start": example_time(test_examples[0]),
@@ -68,6 +77,13 @@ class PlayerBaselineModel:
             "metrics": {
                 output_name: regression_metrics(values)
                 for output_name, values in values_by_target.items()
+            },
+            "baseline_metrics": {
+                baseline_name: {
+                    output_name: regression_metrics(values)
+                    for output_name, values in target_values.items()
+                }
+                for baseline_name, target_values in baseline_values.items()
             },
         }
 
@@ -179,6 +195,35 @@ def training_row_sort_key(row: dict[str, Any]) -> tuple[str, str, str]:
 def example_time(example: dict[str, Any]) -> str | None:
     value = example["row"].get("gameDateTime")
     return str(value) if value is not None else None
+
+
+def split_time_groups(examples: list[dict[str, Any]], train_ratio: float) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
+    groups: list[list[dict[str, Any]]] = []
+    previous_key = object()
+    for example in examples:
+        group_key = split_group_key(example)
+        if group_key != previous_key:
+            groups.append([])
+            previous_key = group_key
+        groups[-1].append(example)
+
+    if len(groups) < 2:
+        raise ValueError("At least two chronological groups are required for evaluation")
+
+    split_index = min(max(int(len(groups) * train_ratio), 1), len(groups) - 1)
+    train_groups = groups[:split_index]
+    test_groups = groups[split_index:]
+    return (
+        [example for group in train_groups for example in group],
+        [example for group in test_groups for example in group],
+        len(train_groups),
+        len(test_groups),
+    )
+
+
+def split_group_key(example: dict[str, Any]) -> str:
+    row = example["row"]
+    return str(row.get("gameDateTime") or row.get("gameId") or "")
 
 
 def regression_metrics(values: list[tuple[float, float]]) -> dict[str, float]:

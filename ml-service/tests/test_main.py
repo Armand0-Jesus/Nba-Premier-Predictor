@@ -58,6 +58,7 @@ class MainEndpointTests(unittest.TestCase):
         self.assertEqual(3, response.train_rows)
         self.assertEqual(1, response.test_rows)
         self.assertIn("fantasy_points", response.metrics)
+        self.assertIn("feature_average", response.baseline_metrics)
         self.assertEqual(response.metrics, main.model_metrics()["playerBaseline"]["metrics"])
 
     def test_train_player_baseline_updates_loaded_model(self):
