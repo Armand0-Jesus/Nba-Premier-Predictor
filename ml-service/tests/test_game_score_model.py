@@ -21,6 +21,17 @@ class GameScoreBaselineModelTests(unittest.TestCase):
         self.assertEqual(6.0, prediction["point_differential"])
         self.assertGreater(prediction["confidence_score"], 0)
 
+    def test_exact_tie_does_not_choose_home_team(self):
+        prediction = GameScoreBaselineModel().predict({
+            "home_last_5_team_score_avg": 108.0,
+            "away_last_5_team_score_avg": 108.0,
+        }, 1610612744, 1610612747)
+
+        self.assertEqual(108.0, prediction["home_team_score"])
+        self.assertEqual(108.0, prediction["away_team_score"])
+        self.assertEqual(0.0, prediction["point_differential"])
+        self.assertIsNone(prediction["predicted_winner_team_id"])
+
     def test_fit_trains_game_score_model(self):
         model = GameScoreBaselineModel.fit([
             training_row(100, 90, "2024-01-01T22:00:00"),

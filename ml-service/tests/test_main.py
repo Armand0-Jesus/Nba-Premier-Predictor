@@ -44,6 +44,21 @@ class MainEndpointTests(unittest.TestCase):
         self.assertIn("/model/metrics", paths)
         self.assertIn("/model/versions", paths)
 
+    def test_health_reports_player_and_game_score_model_status(self):
+        main.app.state.player_model = PlayerBaselineModel(trained_rows=30)
+        main.app.state.game_score_model = GameScoreBaselineModel(trained_rows=12)
+
+        with TestClient(main.app) as client:
+            response = client.get("/health")
+
+        self.assertEqual(200, response.status_code)
+        body = response.json()
+        self.assertEqual("ok", body["status"])
+        self.assertEqual("trained", body["models"]["player"]["status"])
+        self.assertEqual(30, body["models"]["player"]["trainedRows"])
+        self.assertEqual("trained", body["models"]["gameScore"]["status"])
+        self.assertEqual(12, body["models"]["gameScore"]["trainedRows"])
+
     def test_evaluate_player_baseline_stores_latest_metrics(self):
         rows = [
             training_row(10, 4, 3, 28, 19.3, "2023-10-01T19:00:00"),

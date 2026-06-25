@@ -71,6 +71,8 @@ create table if not exists player_stat_predictions (
 
 create table if not exists team_score_predictions (
     prediction_id bigint primary key,
+    home_team_id bigint,
+    away_team_id bigint,
     home_team_score numeric(6,2),
     away_team_score numeric(6,2),
     predicted_winner_team_id bigint,

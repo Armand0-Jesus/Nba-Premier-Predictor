@@ -19,6 +19,8 @@ public record PredictionHistoryResponse(
         Double fantasyFloor,
         Double fantasyCeiling,
         String riskLevel,
+        Long homeTeamId,
+        Long awayTeamId,
         Double homeTeamScore,
         Double awayTeamScore,
         Long predictedWinnerTeamId,

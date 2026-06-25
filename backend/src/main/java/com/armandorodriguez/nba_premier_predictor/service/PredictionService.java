@@ -66,6 +66,7 @@ public class PredictionService {
                        ps.projected_points, ps.projected_rebounds, ps.projected_assists,
                        ps.projected_minutes, fp.fantasy_points, fp.floor_projection,
                        fp.ceiling_projection, fp.risk_level,
+                       tsp.home_team_id, tsp.away_team_id,
                        tsp.home_team_score, tsp.away_team_score,
                        tsp.predicted_winner_team_id, tsp.point_differential
                 from predictions p
@@ -92,6 +93,8 @@ public class PredictionService {
                 nullableDouble(rs, "floor_projection"),
                 nullableDouble(rs, "ceiling_projection"),
                 rs.getString("risk_level"),
+                nullableLong(rs, "home_team_id"),
+                nullableLong(rs, "away_team_id"),
                 nullableDouble(rs, "home_team_score"),
                 nullableDouble(rs, "away_team_score"),
                 nullableLong(rs, "predicted_winner_team_id"),
@@ -186,11 +189,14 @@ public class PredictionService {
     private void saveTeamScorePrediction(Long predictionId, TeamScorePredictionResponse response) {
         jdbcTemplate.update("""
                 insert into team_score_predictions (
-                    prediction_id, home_team_score, away_team_score,
+                    prediction_id, home_team_id, away_team_id,
+                    home_team_score, away_team_score,
                     predicted_winner_team_id, point_differential
-                ) values (?, ?, ?, ?, ?)
+                ) values (?, ?, ?, ?, ?, ?, ?)
                 """,
                 predictionId,
+                response.homeTeamId(),
+                response.awayTeamId(),
                 response.homeTeamScore(),
                 response.awayTeamScore(),
                 response.predictedWinnerTeamId(),

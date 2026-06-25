@@ -103,11 +103,16 @@ class EvaluationResponse(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    model: PlayerBaselineModel = app.state.player_model
+    player_model: PlayerBaselineModel = app.state.player_model
+    game_score_model: GameScoreBaselineModel = app.state.game_score_model
     return {
         "status": "ok",
-        "modelVersion": model.model_version,
-        "trainedRows": model.trained_rows,
+        "modelVersion": player_model.model_version,
+        "trainedRows": player_model.trained_rows,
+        "models": {
+            "player": model_health(player_model),
+            "gameScore": model_health(game_score_model),
+        },
     }
 
 
@@ -327,3 +332,11 @@ def fetch_game_score_training_page(season: int | None, limit: int, offset: int) 
     if not isinstance(data, list):
         raise HTTPException(status_code=502, detail="Backend game-score training data response was not a list")
     return data
+
+
+def model_health(model: PlayerBaselineModel | GameScoreBaselineModel) -> dict[str, Any]:
+    return {
+        "status": "trained" if model.trained_rows > 0 else "untrained",
+        "modelVersion": model.model_version,
+        "trainedRows": model.trained_rows,
+    }

@@ -102,6 +102,8 @@ class PredictionIntegrationTests {
         mockMvc.perform(get("/api/predictions/history").param("limit", "5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].predictionType").value("game_score"))
+                .andExpect(jsonPath("$[0].homeTeamId").value(1610612744))
+                .andExpect(jsonPath("$[0].awayTeamId").value(1610612747))
                 .andExpect(jsonPath("$[0].homeTeamScore").value(116.5))
                 .andExpect(jsonPath("$[0].awayTeamScore").value(108.2))
                 .andExpect(jsonPath("$[0].predictedWinnerTeamId").value(1610612744))

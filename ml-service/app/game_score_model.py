@@ -135,7 +135,11 @@ class GameScoreBaselineModel:
             }
 
         point_differential = round(scores["home_team_score"] - scores["away_team_score"], 2)
-        winner = home_team_id if point_differential >= 0 else away_team_id
+        winner = None
+        if point_differential > 0:
+            winner = home_team_id
+        elif point_differential < 0:
+            winner = away_team_id
         return {
             **scores,
             "predicted_winner_team_id": winner,
