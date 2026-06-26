@@ -2,7 +2,6 @@ import {
   Activity,
   BarChart3,
   CalendarDays,
-  ClipboardList,
   Gauge,
   History,
   Home,
@@ -46,10 +45,10 @@ const navItems = [
   { to: '/players', label: 'Players', icon: Users },
   { to: '/teams', label: 'Teams', icon: ShieldCheck },
   { to: '/games', label: 'Games', icon: CalendarDays },
-  { to: '/predict/player', label: 'Player', icon: Target },
-  { to: '/predict/fantasy', label: 'Fantasy', icon: Sparkles },
-  { to: '/predict/game-score', label: 'Game Score', icon: Trophy },
-  { to: '/model', label: 'Model', icon: Gauge },
+  { to: '/predict/player', label: 'Player Pick', icon: Target },
+  { to: '/predict/fantasy', label: 'Fantasy Pick', icon: Sparkles },
+  { to: '/predict/game-score', label: 'Score Pick', icon: Trophy },
+  { to: '/model', label: 'Accuracy', icon: Gauge },
   { to: '/history', label: 'History', icon: History },
 ];
 
@@ -93,34 +92,34 @@ function Landing() {
 
       <section className="landing-hero">
         <div className="brand-lockup">
-          <span className="brand-kicker">pre-game intelligence</span>
+          <span className="brand-kicker">before tipoff</span>
           <h1>NBA Premier Predictor</h1>
         </div>
         <div className="hero-copy">
-          <p>Leakage-safe projections for player stats, fantasy output, and matchup scores.</p>
+          <p>Predict player lines, fantasy output and game scores using what was known before tipoff.</p>
           <div className="hero-actions">
             <IconLink to="/dashboard" icon={Activity}>
-              Enter Dashboard
+              Open Dashboard
             </IconLink>
-            <IconLink to="/predict/game-score" icon={Trophy} variant="ghost">
-              Game Score
+            <IconLink to="/predict/player" icon={Target} variant="ghost">
+              Make a Pick
             </IconLink>
           </div>
         </div>
         <div className="hero-visual" aria-label="Dunk silhouette">
           <img src={dunkSilhouette} alt="" />
           <div className="score-strip">
-            <span>RIDGE BASELINE</span>
-            <strong>PRE TIPOFF</strong>
+            <span>PREGAME READ</span>
+            <strong>READY</strong>
           </div>
         </div>
       </section>
 
       <section className="landing-grid" aria-label="Platform snapshot">
         <MetricTile label="Player" value="PTS REB AST" />
-        <MetricTile label="Fantasy" value="FLOOR CEIL RISK" />
-        <MetricTile label="Team" value="HOME AWAY DIFF" />
-        <MetricTile label="Model" value="MAE RMSE VERSION" />
+        <MetricTile label="Fantasy" value="FLOOR CEILING" />
+        <MetricTile label="Score" value="MARGIN FAVORITE" />
+        <MetricTile label="Accuracy" value="MISS RATE" />
       </section>
     </main>
   );
@@ -144,11 +143,6 @@ function AppShell() {
         </nav>
       </aside>
       <div className="content-shell">
-        <header className="topbar">
-          <span>Spring Boot API</span>
-          <span>PostgreSQL Source of Truth</span>
-          <span>FastAPI Internal ML</span>
-        </header>
         <Outlet />
       </div>
     </div>
@@ -163,34 +157,39 @@ function Dashboard() {
   const historyRows = Array.isArray(history.data) ? history.data : [];
 
   return (
-    <Page title="Prediction Dashboard" eyebrow="command center">
+    <Page title="Dashboard" eyebrow="game night">
       <div className="dashboard-grid">
-        <StatusPanel title="API Health" value={health.data?.status || 'checking'} error={health.error} icon={Activity} />
         <StatusPanel
-          title="Player Model"
-          value={metrics.data?.playerModelVersion || versionName(versions.data?.activeModel)}
-          subvalue={`${compactNumber(metrics.data?.playerTrainedRows, 0)} rows`}
-          error={metrics.error || versions.error}
+          title="App Status"
+          value={health.data?.status === 'UP' ? 'Ready' : 'Checking'}
+          error={health.error && 'Connection problem'}
+          icon={Activity}
+        />
+        <StatusPanel
+          title="Player Picks"
+          value={metrics.error ? null : 'Ready'}
+          subvalue={`${compactNumber(playerTrainingRows(metrics.data), 0)} examples learned`}
+          error={metrics.error || versions.error ? 'Player picks need a refresh' : ''}
           icon={Target}
         />
         <StatusPanel
-          title="Game Score Model"
-          value={metrics.data?.gameScoreModelVersion || versionName(versions.data?.gameScoreModel)}
-          subvalue={`${compactNumber(metrics.data?.gameScoreTrainedRows, 0)} rows`}
-          error={metrics.error || versions.error}
+          title="Score Picks"
+          value={metrics.error ? null : 'Ready'}
+          subvalue={`${compactNumber(metrics.data?.gameScoreTrainedRows, 0)} examples learned`}
+          error={metrics.error || versions.error ? 'Score picks need a refresh' : ''}
           icon={Trophy}
         />
       </div>
 
       <section className="panel panel-wide">
-        <PanelHeader title="Recent Prediction Confidence" icon={LineChart} />
-        <ChartFrame empty={!historyRows.length} emptyLabel={history.error || 'No prediction history yet'}>
+        <PanelHeader title="Recent Confidence" icon={LineChart} />
+        <ChartFrame empty={!historyRows.length} emptyLabel={history.error || 'No recent picks yet'}>
           <ResponsiveContainer width="100%" height="100%">
             <ReLineChart data={historyRows.map((row, index) => ({ ...row, index: index + 1 }))}>
               <CartesianGrid stroke="rgba(255,255,255,.08)" vertical={false} />
               <XAxis dataKey="index" stroke="#8d929f" tickLine={false} />
-              <YAxis stroke="#8d929f" tickLine={false} domain={[0, 1]} />
-              <Tooltip contentStyle={tooltipStyle} />
+              <YAxis stroke="#8d929f" tickLine={false} domain={[0, 1]} tickFormatter={(value) => `${value * 100}%`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(value) => percent(value)} />
               <Line type="monotone" dataKey="confidenceScore" stroke="#f77f00" strokeWidth={2} dot={{ r: 3 }} />
             </ReLineChart>
           </ResponsiveContainer>
@@ -198,9 +197,13 @@ function Dashboard() {
       </section>
 
       <section className="split">
-        <MetricsBlock title="Player Holdout" evaluation={metrics.data?.playerBaseline} />
-        <MetricsBlock title="Game Score Holdout" evaluation={metrics.data?.gameScoreBaseline} />
+        <MetricsBlock title="Player Accuracy" evaluation={metrics.data?.playerBaseline} />
+        <MetricsBlock title="Score Accuracy" evaluation={metrics.data?.gameScoreBaseline} />
       </section>
+
+      <AdvancedDetails title="Technical details">
+        <JsonBlock value={versions.data} />
+      </AdvancedDetails>
     </Page>
   );
 }
@@ -210,12 +213,14 @@ function PlayersPage() {
     <EntityList
       title="Players"
       endpoint="/api/players"
-      searchPlaceholder="Search players"
+      searchPlaceholder="Search by player name"
+      requireQuery
+      emptyBeforeSearch="Search for a player to begin"
       columns={[
         ['fullName', 'Player'],
-        ['position', 'Pos'],
+        ['position', 'Role', readablePosition],
         ['fromYear', 'From'],
-        ['toYear', 'To'],
+        ['toYear', 'Through', playerEndYear],
       ]}
       rowLink={(row) => `/players/${row.id}`}
     />
@@ -227,12 +232,13 @@ function TeamsPage() {
     <EntityList
       title="Teams"
       endpoint="/api/teams"
-      searchPlaceholder="Search teams"
+      searchPlaceholder="Search current teams"
+      baseParams={{ currentOnly: 'true', size: '30' }}
       columns={[
         ['fullName', 'Team'],
         ['abbreviation', 'Abbr'],
-        ['league', 'League'],
         ['seasonFounded', 'Founded'],
+        ['seasonActiveTill', 'Through', teamEndYear],
       ]}
       rowLink={(row) => `/teams/${row.id}`}
     />
@@ -241,23 +247,18 @@ function TeamsPage() {
 
 function GamesPage() {
   const [season, setSeason] = useState('2023');
-  const [teamId, setTeamId] = useState('');
   const [page, setPage] = useState(0);
   const query = new URLSearchParams({ page, size: 20 });
   if (season) query.set('season', season);
-  if (teamId) query.set('teamId', teamId);
   const result = useApi(`/api/games?${query.toString()}`);
   const rows = pageItems(result.data);
 
   return (
-    <Page title="Games" eyebrow="schedule and results">
+    <Page title="Games" eyebrow="schedule">
       <section className="panel">
         <div className="toolbar">
           <Field label="Season">
             <input value={season} onChange={(event) => setSeason(event.target.value)} inputMode="numeric" />
-          </Field>
-          <Field label="Team ID">
-            <input value={teamId} onChange={(event) => setTeamId(event.target.value)} inputMode="numeric" />
           </Field>
           <button className="icon-button" type="button" onClick={() => setPage(0)}>
             <Search size={17} />
@@ -298,7 +299,7 @@ function PlayerDetailPage() {
       {data && (
         <>
           <div className="dashboard-grid">
-            <StatusPanel title="Position" value={data.player.position || 'N/A'} icon={Users} />
+            <StatusPanel title="Role" value={readablePosition(data.player.position)} icon={Users} />
             <StatusPanel title="Season Points" value={compactNumber(data.averages?.points)} icon={Target} />
             <StatusPanel title="Season Minutes" value={compactNumber(data.averages?.minutes)} icon={Gauge} />
           </div>
@@ -362,148 +363,196 @@ function TeamDetailPage() {
 
 function PlayerPredictionPage({ mode }) {
   const [searchParams] = useSearchParams();
-  const [gameId, setGameId] = useState(searchParams.get('gameId') || '22300003');
-  const [playerId, setPlayerId] = useState(searchParams.get('playerId') || '201939');
-  const [teamId, setTeamId] = useState('');
+  const [season, setSeason] = useState('2023');
+  const [playerQuery, setPlayerQuery] = useState(searchParams.get('player') || '');
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [selectedGame, setSelectedGame] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const title = mode === 'fantasy' ? 'Fantasy Prediction' : 'Player Prediction';
+  const title = mode === 'fantasy' ? 'Fantasy Pick' : 'Player Pick';
+  const searchPath = playerQuery.trim().length >= 2
+    ? `/api/players?query=${encodeURIComponent(playerQuery.trim())}&size=6`
+    : null;
+  const playerSearch = useApi(searchPath);
+  const gamesPath = selectedPlayer
+    ? `/api/players/${selectedPlayer.id}/games?season=${encodeURIComponent(season)}&size=12`
+    : null;
+  const playerGames = useApi(gamesPath);
 
-  async function loadSnapshot() {
+  function choosePlayer(player) {
+    setSelectedPlayer(player);
+    setSelectedGame(null);
+    setPrediction(null);
+    setSnapshot(null);
+    setError('');
+  }
+
+  async function submitPrediction() {
+    if (!selectedPlayer || !selectedGame) {
+      setError('Pick a player and game first');
+      return;
+    }
     setLoading(true);
     setError('');
     setPrediction(null);
     try {
       const nextSnapshot = await apiGet(
-        `/api/features/player-snapshots/latest?gameId=${encodeURIComponent(gameId)}&playerId=${encodeURIComponent(playerId)}`,
+        `/api/features/player-snapshots/latest?gameId=${encodeURIComponent(selectedGame.gameId)}&playerId=${encodeURIComponent(selectedPlayer.id)}`,
       );
       setSnapshot(nextSnapshot);
-      setTeamId(nextSnapshot.teamId || '');
-    } catch (err) {
-      setError(err.message);
-      setSnapshot(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function submitPrediction() {
-    if (!snapshot?.features) {
-      setError('Load a feature snapshot first');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
       const response = await apiPost(`/api/predictions/${mode}`, {
-        gameId: numberOrNull(gameId),
-        playerId: numberOrNull(playerId),
-        teamId: numberOrNull(teamId),
-        dataCutoffTime: snapshot.dataCutoffTime,
-        features: snapshot.features,
+        gameId: selectedGame.gameId,
+        playerId: selectedPlayer.id,
+        teamId: nextSnapshot.teamId,
+        dataCutoffTime: nextSnapshot.dataCutoffTime,
+        features: nextSnapshot.features,
       });
       setPrediction(response);
     } catch (err) {
-      setError(err.message);
+      setError('We could not find enough pregame data for that pick');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Page title={title} eyebrow="pre-game feature snapshot">
-      <section className="panel">
+    <Page title={title} eyebrow="choose a player and game">
+      <section className="panel workbench">
         <div className="toolbar">
-          <Field label="Game ID">
-            <input value={gameId} onChange={(event) => setGameId(event.target.value)} inputMode="numeric" />
+          <Field label="Player">
+            <input
+              value={playerQuery}
+              onChange={(event) => setPlayerQuery(event.target.value)}
+              placeholder="Search by name"
+            />
           </Field>
-          <Field label="Player ID">
-            <input value={playerId} onChange={(event) => setPlayerId(event.target.value)} inputMode="numeric" />
+          <Field label="Season">
+            <input value={season} onChange={(event) => setSeason(event.target.value)} inputMode="numeric" />
           </Field>
-          <button className="icon-button" type="button" onClick={loadSnapshot} disabled={loading}>
-            {loading ? <Loader2 size={17} className="spin" /> : <ClipboardList size={17} />}
-            <span>Load Snapshot</span>
-          </button>
-          <button className="icon-button primary" type="button" onClick={submitPrediction} disabled={loading || !snapshot}>
-            <Target size={17} />
-            <span>Predict</span>
+        </div>
+
+        <ChoiceList
+          title="Choose player"
+          rows={pageItems(playerSearch.data)}
+          loading={playerSearch.loading && Boolean(searchPath)}
+          empty={playerQuery.trim().length < 2 ? 'Type at least 2 letters' : playerSearch.error || 'No players found'}
+          selectedId={selectedPlayer?.id}
+          getId={(row) => row.id}
+          getTitle={(row) => row.fullName}
+          getMeta={(row) => `${readablePosition(row.position)} - ${playerEndYear(row)}`}
+          onChoose={choosePlayer}
+        />
+
+        <ChoiceList
+          title="Choose game"
+          rows={pageItems(playerGames.data)}
+          loading={playerGames.loading && Boolean(gamesPath)}
+          empty={selectedPlayer ? playerGames.error || 'No games found for that season' : 'Choose a player first'}
+          selectedId={selectedGame?.gameId}
+          getId={(row) => row.gameId}
+          getTitle={playerGameTitle}
+          getMeta={playerGameMeta}
+          onChoose={(game) => {
+            setSelectedGame(game);
+            setPrediction(null);
+            setSnapshot(null);
+            setError('');
+          }}
+        />
+
+        <div className="workbench-actions">
+          <button className="icon-button primary" type="button" onClick={submitPrediction} disabled={loading}>
+            {loading ? <Loader2 size={17} className="spin" /> : <Target size={17} />}
+            <span>{mode === 'fantasy' ? 'Predict Fantasy' : 'Predict Player Line'}</span>
           </button>
         </div>
         <ErrorBanner message={error} />
-        <SnapshotSummary snapshot={snapshot} />
       </section>
       <PredictionResult prediction={prediction} fantasy={mode === 'fantasy'} />
+      <AdvancedPredictionDetails prediction={prediction} snapshot={snapshot} />
     </Page>
   );
 }
 
 function GameScorePredictionPage() {
   const [searchParams] = useSearchParams();
-  const [gameId, setGameId] = useState(searchParams.get('gameId') || '22300003');
+  const [season, setSeason] = useState('2023');
+  const [selectedGame, setSelectedGame] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const games = useApi(`/api/games?season=${encodeURIComponent(season)}&size=12`);
 
-  async function loadSnapshot() {
-    setLoading(true);
-    setError('');
-    setPrediction(null);
-    try {
-      setSnapshot(await apiGet(`/api/features/game-snapshots/latest?gameId=${encodeURIComponent(gameId)}`));
-    } catch (err) {
-      setError(err.message);
-      setSnapshot(null);
-    } finally {
-      setLoading(false);
-    }
-  }
+  useEffect(() => {
+    const gameId = searchParams.get('gameId');
+    if (!gameId || selectedGame || !games.data) return;
+    const row = pageItems(games.data).find((game) => String(game.id) === String(gameId));
+    if (row) setSelectedGame(row);
+  }, [games.data, searchParams, selectedGame]);
 
   async function submitPrediction() {
-    if (!snapshot?.features) {
-      setError('Load a feature snapshot first');
+    if (!selectedGame) {
+      setError('Choose a game first');
       return;
     }
     setLoading(true);
     setError('');
+    setPrediction(null);
     try {
+      const nextSnapshot = await apiGet(`/api/features/game-snapshots/latest?gameId=${encodeURIComponent(selectedGame.id)}`);
+      setSnapshot(nextSnapshot);
       const response = await apiPost('/api/predictions/game-score', {
-        gameId: numberOrNull(gameId),
-        homeTeamId: snapshot.homeTeamId,
-        awayTeamId: snapshot.awayTeamId,
-        dataCutoffTime: snapshot.dataCutoffTime,
-        features: snapshot.features,
+        gameId: selectedGame.id,
+        homeTeamId: nextSnapshot.homeTeamId,
+        awayTeamId: nextSnapshot.awayTeamId,
+        dataCutoffTime: nextSnapshot.dataCutoffTime,
+        features: nextSnapshot.features,
       });
       setPrediction(response);
     } catch (err) {
-      setError(err.message);
+      setError('We could not find enough pregame data for that matchup');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <Page title="Game Score Prediction" eyebrow="matchup model">
-      <section className="panel">
+    <Page title="Score Pick" eyebrow="choose a matchup">
+      <section className="panel workbench">
         <div className="toolbar">
-          <Field label="Game ID">
-            <input value={gameId} onChange={(event) => setGameId(event.target.value)} inputMode="numeric" />
+          <Field label="Season">
+            <input value={season} onChange={(event) => setSeason(event.target.value)} inputMode="numeric" />
           </Field>
-          <button className="icon-button" type="button" onClick={loadSnapshot} disabled={loading}>
-            {loading ? <Loader2 size={17} className="spin" /> : <ClipboardList size={17} />}
-            <span>Load Snapshot</span>
-          </button>
-          <button className="icon-button primary" type="button" onClick={submitPrediction} disabled={loading || !snapshot}>
-            <Trophy size={17} />
-            <span>Predict</span>
+        </div>
+        <ChoiceList
+          title="Choose game"
+          rows={pageItems(games.data)}
+          loading={games.loading}
+          empty={games.error || 'No games found'}
+          selectedId={selectedGame?.id}
+          getId={(row) => row.id}
+          getTitle={gameTitle}
+          getMeta={gameMeta}
+          onChoose={(game) => {
+            setSelectedGame(game);
+            setPrediction(null);
+            setSnapshot(null);
+            setError('');
+          }}
+        />
+        <div className="workbench-actions">
+          <button className="icon-button primary" type="button" onClick={submitPrediction} disabled={loading}>
+            {loading ? <Loader2 size={17} className="spin" /> : <Trophy size={17} />}
+            <span>Predict Score</span>
           </button>
         </div>
         <ErrorBanner message={error} />
-        <SnapshotSummary snapshot={snapshot} />
       </section>
-      <GameScoreResult prediction={prediction} />
+      <GameScoreResult prediction={prediction} game={selectedGame} />
+      <AdvancedPredictionDetails prediction={prediction} snapshot={snapshot} />
     </Page>
   );
 }
@@ -513,30 +562,29 @@ function ModelPage() {
   const versions = useApi('/api/model/versions');
 
   return (
-    <Page title="Model Metrics" eyebrow="evaluation">
+    <Page title="Accuracy" eyebrow="how close it has been">
       <ErrorBanner message={metrics.error || versions.error} />
       <div className="dashboard-grid">
         <StatusPanel
-          title="Active Player"
-          value={metrics.data?.playerModelVersion || versionName(versions.data?.activeModel)}
-          subvalue={`${compactNumber(metrics.data?.playerTrainedRows, 0)} rows`}
+          title="Player Picks"
+          value={metrics.error ? null : 'Ready'}
+          subvalue={`${compactNumber(playerTrainingRows(metrics.data), 0)} examples`}
           icon={Target}
         />
         <StatusPanel
-          title="Active Game Score"
-          value={metrics.data?.gameScoreModelVersion || versionName(versions.data?.gameScoreModel)}
-          subvalue={`${compactNumber(metrics.data?.gameScoreTrainedRows, 0)} rows`}
+          title="Score Picks"
+          value={metrics.error ? null : 'Ready'}
+          subvalue={`${compactNumber(metrics.data?.gameScoreTrainedRows, 0)} examples`}
           icon={Trophy}
         />
       </div>
       <section className="split">
-        <MetricsBlock title="Player Stat Accuracy" evaluation={metrics.data?.playerBaseline} />
-        <MetricsBlock title="Game Score Accuracy" evaluation={metrics.data?.gameScoreBaseline} />
+        <MetricsBlock title="Player Accuracy" evaluation={metrics.data?.playerBaseline} />
+        <MetricsBlock title="Score Accuracy" evaluation={metrics.data?.gameScoreBaseline} />
       </section>
-      <section className="panel panel-wide">
-        <PanelHeader title="Model Version Payload" icon={Gauge} />
+      <AdvancedDetails title="Advanced model info">
         <JsonBlock value={versions.data} />
-      </section>
+      </AdvancedDetails>
     </Page>
   );
 }
@@ -546,16 +594,15 @@ function HistoryPage() {
   const rows = Array.isArray(result.data) ? result.data : [];
 
   return (
-    <Page title="Prediction History" eyebrow="stored outputs">
+    <Page title="Prediction History" eyebrow="recent picks">
       <section className="panel">
         <DataTable
           rows={rows}
           columns={[
-            ['predictionType', 'Type'],
+            ['predictionType', 'Type', labelize],
             ['gameId', 'Game'],
             ['playerId', 'Player'],
-            ['modelVersion', 'Model'],
-            ['confidenceScore', 'Conf'],
+            ['confidenceScore', 'Confidence', percent],
             ['requestedAt', 'Requested'],
           ]}
           empty={result.error || 'No prediction history yet'}
@@ -565,12 +612,23 @@ function HistoryPage() {
   );
 }
 
-function EntityList({ title, endpoint, searchPlaceholder, columns, rowLink }) {
+function EntityList({
+  title,
+  endpoint,
+  searchPlaceholder,
+  columns,
+  rowLink,
+  baseParams = {},
+  requireQuery = false,
+  emptyBeforeSearch = 'Search to begin',
+}) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
-  const search = new URLSearchParams({ page, size: 20 });
-  if (query) search.set('query', query);
-  const result = useApi(`${endpoint}?${search.toString()}`);
+  const hasQuery = query.trim().length > 0;
+  const search = new URLSearchParams({ page, size: 20, ...baseParams });
+  if (hasQuery) search.set('query', query.trim());
+  const path = requireQuery && !hasQuery ? null : `${endpoint}?${search.toString()}`;
+  const result = useApi(path);
   const rows = pageItems(result.data);
 
   return (
@@ -593,11 +651,39 @@ function EntityList({ title, endpoint, searchPlaceholder, columns, rowLink }) {
               Open
             </Link>
           )}
-          empty={result.error || 'No rows found'}
+          empty={!path ? emptyBeforeSearch : result.error || 'No rows found'}
         />
-        <Pager page={page} setPage={setPage} last={result.data?.last} />
+        {path && <Pager page={page} setPage={setPage} last={result.data?.last} />}
       </section>
     </Page>
+  );
+}
+
+function ChoiceList({ title, rows, loading, empty, selectedId, getId, getTitle, getMeta, onChoose }) {
+  return (
+    <div className="choice-section">
+      <h3>{title}</h3>
+      {loading && <EmptyState label="Loading choices" />}
+      {!loading && !rows.length && <EmptyState label={empty} />}
+      {!loading && rows.length > 0 && (
+        <div className="choice-grid">
+          {rows.map((row) => {
+            const id = getId(row);
+            return (
+              <button
+                className={`choice-card ${String(selectedId) === String(id) ? 'choice-card--selected' : ''}`}
+                type="button"
+                key={id}
+                onClick={() => onChoose(row)}
+              >
+                <strong>{getTitle(row)}</strong>
+                <span>{getMeta(row)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -613,22 +699,24 @@ function MetricsBlock({ title, evaluation }) {
           {rows.map((row) => (
             <div className="metric-row" key={row.name}>
               <span>{labelize(row.name)}</span>
-              <strong>MAE {compactNumber(row.mae)}</strong>
-              <em>RMSE {compactNumber(row.rmse)}</em>
+              <strong>Average miss {compactNumber(row.mae)}</strong>
+              <em>Typical miss {compactNumber(row.rmse)}</em>
             </div>
           ))}
         </div>
       ) : (
-        <EmptyState label="No evaluation metrics loaded" />
+        <EmptyState label="Run an evaluation to see accuracy here" />
       )}
       {baselineRows.length > 0 && (
-        <div className="baseline-strip">
-          {baselineRows.slice(0, 3).map((row) => (
-            <span key={`${row.group}-${row.name}`}>
-              {labelize(row.group)} {labelize(row.name)} MAE {compactNumber(row.mae)}
-            </span>
-          ))}
-        </div>
+        <AdvancedDetails title="Compare with simple baselines">
+          <div className="baseline-strip">
+            {baselineRows.map((row) => (
+              <span key={`${row.group}-${row.name}`}>
+                {labelize(row.group)} {labelize(row.name)} average miss {compactNumber(row.mae)}
+              </span>
+            ))}
+          </div>
+        </AdvancedDetails>
       )}
     </section>
   );
@@ -638,7 +726,7 @@ function PredictionResult({ prediction, fantasy }) {
   if (!prediction) return null;
   return (
     <section className="panel panel-wide result-panel">
-      <PanelHeader title="Prediction Result" icon={Target} />
+      <PanelHeader title="Expected Stat Line" icon={Target} />
       <div className="result-grid">
         <MetricTile label="Points" value={compactNumber(prediction.projectedPoints)} />
         <MetricTile label="Rebounds" value={compactNumber(prediction.projectedRebounds)} />
@@ -647,78 +735,95 @@ function PredictionResult({ prediction, fantasy }) {
         <MetricTile label="Fantasy" value={compactNumber(prediction.fantasyPoints)} />
         <MetricTile label="Confidence" value={percent(prediction.confidenceScore)} />
       </div>
+      <div className="plain-read">
+        <strong>{prediction.riskLevel ? `${titleCase(prediction.riskLevel)} risk` : 'Risk unknown'}</strong>
+        <span>
+          This confidence score is a model confidence estimate, not a betting probability.
+        </span>
+      </div>
       {fantasy && (
         <div className="result-band">
           <span>Floor {compactNumber(prediction.fantasyFloor)}</span>
           <strong>Ceiling {compactNumber(prediction.fantasyCeiling)}</strong>
-          <span>Risk {prediction.riskLevel || 'N/A'}</span>
+          <span>Risk {prediction.riskLevel ? titleCase(prediction.riskLevel) : 'Unknown'}</span>
         </div>
       )}
-      <FooterMeta prediction={prediction} />
     </section>
   );
 }
 
-function GameScoreResult({ prediction }) {
+function GameScoreResult({ prediction, game }) {
   if (!prediction) return null;
+  const favorite = favoriteName(prediction, game);
   return (
     <section className="panel panel-wide result-panel">
-      <PanelHeader title="Game Score Result" icon={Trophy} />
+      <PanelHeader title="Projected Score" icon={Trophy} />
       <div className="scoreboard">
         <div>
-          <span>Home</span>
+          <span>{game?.homeTeamName || 'Home'}</span>
           <strong>{compactNumber(prediction.homeTeamScore)}</strong>
-          <em>{prediction.homeTeamId}</em>
+          <em>Home</em>
         </div>
         <div>
-          <span>Away</span>
+          <span>{game?.awayTeamName || 'Away'}</span>
           <strong>{compactNumber(prediction.awayTeamScore)}</strong>
-          <em>{prediction.awayTeamId}</em>
+          <em>Away</em>
         </div>
         <div>
-          <span>Diff</span>
-          <strong>{compactNumber(prediction.pointDifferential)}</strong>
-          <em>{prediction.predictedWinnerTeamId ? `Winner ${prediction.predictedWinnerTeamId}` : 'Tie'}</em>
+          <span>Favored Team</span>
+          <strong>{favorite}</strong>
+          <em>By {compactNumber(Math.abs(prediction.pointDifferential))}</em>
         </div>
         <div>
           <span>Confidence</span>
           <strong>{percent(prediction.confidenceScore)}</strong>
-          <em>{prediction.modelVersion}</em>
+          <em>Not a betting probability</em>
         </div>
       </div>
-      <FooterMeta prediction={prediction} />
     </section>
   );
 }
 
-function SnapshotSummary({ snapshot }) {
-  if (!snapshot) {
-    return <EmptyState label="No feature snapshot loaded" />;
-  }
-  const previewKeys = Object.keys(snapshot.features || {}).slice(0, 10);
+function AdvancedPredictionDetails({ prediction, snapshot }) {
+  if (!prediction && !snapshot) return null;
   return (
-    <div className="snapshot-summary">
-      <div>
-        <span>Snapshot</span>
-        <strong>#{snapshot.snapshotId}</strong>
+    <AdvancedDetails title="How this was calculated">
+      <div className="snapshot-summary">
+        {snapshot && (
+          <>
+            <MetaBox label="Pregame data" value={`#${snapshot.snapshotId}`} />
+            <MetaBox label="Data cutoff" value={formatDateTime(snapshot.dataCutoffTime)} />
+            <MetaBox label="Home team" value={snapshot.homeTeamId || 'Unknown'} />
+            <MetaBox label="Away team" value={snapshot.awayTeamId || 'Unknown'} />
+          </>
+        )}
+        {prediction && (
+          <>
+            <MetaBox label="Prediction" value={`#${prediction.predictionId || 'Unknown'}`} />
+            <MetaBox label="Version" value={prediction.modelVersion || 'Unknown'} />
+            <MetaBox label="Examples" value={compactNumber(prediction.trainedRows, 0)} />
+          </>
+        )}
       </div>
-      <div>
-        <span>Cutoff</span>
-        <strong>{formatDateTime(snapshot.dataCutoffTime)}</strong>
-      </div>
-      <div>
-        <span>Home</span>
-        <strong>{snapshot.homeTeamId || 'N/A'}</strong>
-      </div>
-      <div>
-        <span>Away</span>
-        <strong>{snapshot.awayTeamId || 'N/A'}</strong>
-      </div>
-      <div className="feature-chip-row">
-        {previewKeys.map((key) => (
-          <span key={key}>{labelize(key)}</span>
-        ))}
-      </div>
+      <JsonBlock value={{ factors: prediction?.factors, features: snapshot?.features }} />
+    </AdvancedDetails>
+  );
+}
+
+function AdvancedDetails({ title, children }) {
+  return (
+    <details className="advanced-details">
+      <summary>{title}</summary>
+      <div className="advanced-details-body">{children}</div>
+    </details>
+  );
+}
+
+function MetaBox({ label, value }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -726,7 +831,7 @@ function SnapshotSummary({ snapshot }) {
 function GameLogTable({ rows }) {
   return (
     <section className="panel panel-wide">
-      <PanelHeader title="Recent Game Log" icon={ClipboardList} />
+      <PanelHeader title="Recent Game Log" icon={BarChart3} />
       <DataTable
         rows={rows}
         columns={[
@@ -761,8 +866,8 @@ function DataTable({ rows, columns, action, empty }) {
         <tbody>
           {rows.map((row, index) => (
             <tr key={row.id || row.gameId || row.predictionId || index}>
-              {columns.map(([key]) => (
-                <td key={key}>{formatCell(row[key])}</td>
+              {columns.map((column) => (
+                <td key={column[1]}>{formatColumn(row, column)}</td>
               ))}
               {action && <td>{action(row)}</td>}
             </tr>
@@ -798,7 +903,7 @@ function StatusPanel({ title, value, subvalue, error, icon: Icon }) {
   return (
     <section className={`panel status-panel ${error ? 'panel-error' : ''}`}>
       <PanelHeader title={title} icon={Icon} />
-      <strong>{error ? 'Offline' : value || 'N/A'}</strong>
+      <strong>{error ? 'Needs attention' : value || 'Unknown'}</strong>
       <span>{error || subvalue || 'Ready'}</span>
     </section>
   );
@@ -844,16 +949,6 @@ function ErrorBanner({ message }) {
   return <div className="error-banner">{message}</div>;
 }
 
-function FooterMeta({ prediction }) {
-  return (
-    <div className="footer-meta">
-      <span>Prediction #{prediction.predictionId || 'N/A'}</span>
-      <span>{prediction.modelVersion || 'No model version'}</span>
-      <span>{compactNumber(prediction.trainedRows, 0)} trained rows</span>
-    </div>
-  );
-}
-
 function Pager({ page, setPage, last }) {
   return (
     <div className="pager">
@@ -873,9 +968,13 @@ function JsonBlock({ value }) {
 }
 
 function useApi(path) {
-  const [state, setState] = useState({ data: null, error: '', loading: true });
+  const [state, setState] = useState({ data: null, error: '', loading: Boolean(path) });
 
   useEffect(() => {
+    if (!path) {
+      setState({ data: null, error: '', loading: false });
+      return undefined;
+    }
     let active = true;
     setState({ data: null, error: '', loading: true });
     apiGet(path)
@@ -909,8 +1008,65 @@ function baselineMetricRows(baselines) {
   );
 }
 
-function versionName(value) {
-  return value?.versionName || value?.modelVersion || value || 'N/A';
+function playerTrainingRows(metrics) {
+  return metrics?.playerTrainedRows ?? metrics?.trainedRows;
+}
+
+function formatColumn(row, [key, , formatter]) {
+  return formatter ? formatter(row[key], row) : formatCell(row[key]);
+}
+
+function playerEndYear(value, row) {
+  if (row?.active) return 'Present';
+  return value || 'Unknown';
+}
+
+function teamEndYear(value) {
+  return value && Number(value) < 2100 ? value : 'Present';
+}
+
+function readablePosition(value) {
+  if (!value) return 'Unknown';
+  return String(value)
+    .split('/')
+    .map((part) => ({ G: 'Guard', F: 'Forward', C: 'Center' })[part] || part)
+    .join(' / ');
+}
+
+function playerGameTitle(row) {
+  const location = row.home ? 'home' : 'away';
+  return `${formatDateTime(row.gameDateTimeEst)} ${location} game`;
+}
+
+function playerGameMeta(row) {
+  const result = row.win === true ? 'Win' : row.win === false ? 'Loss' : 'Result unknown';
+  return `${row.teamName || 'Team unknown'} - ${result}`;
+}
+
+function gameTitle(row) {
+  return `${row.awayTeamName || 'Away'} at ${row.homeTeamName || 'Home'}`;
+}
+
+function gameMeta(row) {
+  return `${formatDateTime(row.gameDateTimeEst || row.gameDate)} - ${scoreText(row)}`;
+}
+
+function scoreText(row) {
+  if (row.homeScore === null || row.homeScore === undefined || row.awayScore === null || row.awayScore === undefined) {
+    return 'Score pending';
+  }
+  return `${row.awayScore}-${row.homeScore}`;
+}
+
+function favoriteName(prediction, game) {
+  if (!prediction.predictedWinnerTeamId) return 'No favorite';
+  if (String(prediction.predictedWinnerTeamId) === String(prediction.homeTeamId)) {
+    return game?.homeTeamName || 'Home';
+  }
+  if (String(prediction.predictedWinnerTeamId) === String(prediction.awayTeamId)) {
+    return game?.awayTeamName || 'Away';
+  }
+  return 'Unknown';
 }
 
 function labelize(value) {
@@ -919,13 +1075,14 @@ function labelize(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function numberOrNull(value) {
-  if (value === '' || value === null || value === undefined) return null;
-  return Number(value);
+function titleCase(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatCell(value) {
-  if (value === null || value === undefined || value === '') return 'N/A';
+  if (value === null || value === undefined || value === '') return 'Unknown';
   if (typeof value === 'number') return Number.isInteger(value) ? value : compactNumber(value, 2);
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (typeof value === 'string' && value.includes('T')) return formatDateTime(value);
@@ -933,7 +1090,7 @@ function formatCell(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) return 'N/A';
+  if (!value) return 'Unknown';
   return String(value).replace('T', ' ').replace(/\.\d+$/, '');
 }
 

@@ -1,6 +1,7 @@
 package com.armandorodriguez.nba_premier_predictor.service;
 
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
@@ -21,6 +22,14 @@ import com.armandorodriguez.nba_premier_predictor.repository.TeamRepository;
 @Transactional(readOnly = true)
 public class TeamService {
 
+    private static final Set<Long> CURRENT_NBA_TEAM_IDS = Set.of(
+            1610612737L, 1610612738L, 1610612739L, 1610612740L, 1610612741L,
+            1610612742L, 1610612743L, 1610612744L, 1610612745L, 1610612746L,
+            1610612747L, 1610612748L, 1610612749L, 1610612750L, 1610612751L,
+            1610612752L, 1610612753L, 1610612754L, 1610612755L, 1610612756L,
+            1610612757L, 1610612758L, 1610612759L, 1610612760L, 1610612761L,
+            1610612762L, 1610612763L, 1610612764L, 1610612765L, 1610612766L);
+
     private final TeamRepository teamRepository;
     private final TeamGameStatsRepository statsRepository;
 
@@ -29,8 +38,8 @@ public class TeamService {
         this.statsRepository = statsRepository;
     }
 
-    public Page<TeamResponse> search(String query, Pageable pageable) {
-        return teamRepository.search(clean(query), pageable).map(TeamResponse::from);
+    public Page<TeamResponse> search(String query, boolean currentOnly, Pageable pageable) {
+        return teamRepository.search(clean(query), currentOnly, CURRENT_NBA_TEAM_IDS, pageable).map(TeamResponse::from);
     }
 
     @Cacheable(cacheNames = "teamDetails", key = "#teamId")

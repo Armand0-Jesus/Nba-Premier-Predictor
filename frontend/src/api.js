@@ -28,14 +28,14 @@ export function pageItems(payload) {
 
 export function compactNumber(value, digits = 1) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return 'N/A';
+    return 'Unknown';
   }
   return Number(value).toFixed(digits).replace(/\.0$/, '');
 }
 
 export function percent(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return 'N/A';
+    return 'Unknown';
   }
   return `${Math.round(Number(value) * 100)}%`;
 }

@@ -190,7 +190,8 @@ button:disabled {
 .footer-meta,
 .result-band,
 .feature-chip-row,
-.baseline-strip {
+.baseline-strip,
+.workbench-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -417,6 +418,60 @@ button:disabled {
   border-color: rgba(214, 40, 40, 0.72);
 }
 
+.workbench {
+  display: grid;
+  gap: 18px;
+}
+
+.choice-section {
+  display: grid;
+  gap: 12px;
+}
+
+.choice-section h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.choice-card {
+  display: grid;
+  gap: 7px;
+  min-height: 84px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  text-align: left;
+}
+
+.choice-card strong {
+  font-size: 1rem;
+}
+
+.choice-card span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.choice-card:hover,
+.choice-card--selected {
+  border-color: var(--orange);
+  background: rgba(247, 127, 0, 0.12);
+}
+
+.workbench-actions {
+  justify-content: flex-end;
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -562,6 +617,26 @@ tr:last-child td {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.advanced-details {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(12, 14, 18, 0.76);
+}
+
+.advanced-details summary {
+  min-height: 44px;
+  padding: 12px 14px;
+  color: var(--text);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.advanced-details-body {
+  display: grid;
+  gap: 14px;
+  padding: 0 14px 14px;
+}
+
 .snapshot-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -602,6 +677,22 @@ tr:last-child td {
 
 .result-band strong {
   color: var(--orange-strong);
+}
+
+.plain-read {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.plain-read strong {
+  color: var(--orange-strong);
+}
+
+.plain-read span {
+  color: var(--muted);
 }
 
 .scoreboard {

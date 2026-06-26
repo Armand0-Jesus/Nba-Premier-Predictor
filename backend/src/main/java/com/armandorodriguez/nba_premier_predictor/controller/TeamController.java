@@ -28,8 +28,9 @@ public class TeamController {
     @GetMapping
     Page<TeamResponse> search(
             @RequestParam(required = false) String query,
+            @RequestParam(defaultValue = "true") boolean currentOnly,
             @PageableDefault(size = 20, sort = "name") Pageable pageable) {
-        return teamService.search(query, pageable);
+        return teamService.search(query, currentOnly, pageable);
     }
 
     @GetMapping("/{teamId}")

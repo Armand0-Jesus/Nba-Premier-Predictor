@@ -83,6 +83,25 @@ class CoreApiIntegrationTests {
     }
 
     @Test
+    void teamsEndpointDefaultsToCurrentNbaTeams() throws Exception {
+        mockMvc.perform(get("/api/teams").param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(2)))
+                .andExpect(jsonPath("$.content[0].fullName").value("Los Angeles Lakers"))
+                .andExpect(jsonPath("$.content[1].fullName").value("Golden State Warriors"));
+    }
+
+    @Test
+    void teamsEndpointCanIncludeHistoricalTeams() throws Exception {
+        mockMvc.perform(get("/api/teams")
+                        .param("query", "Sheboygan")
+                        .param("currentOnly", "false"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].fullName").value("Sheboygan Red Skins"));
+    }
+
+    @Test
     void gamesEndpointReturnsSeededGames() throws Exception {
         mockMvc.perform(get("/api/games").param("season", "2023").param("teamId", "1610612744"))
                 .andExpect(status().isOk())

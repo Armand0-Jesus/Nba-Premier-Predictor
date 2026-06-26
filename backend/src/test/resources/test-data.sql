@@ -2,7 +2,9 @@ insert into teams (
     team_id, city, name, abbreviation, season_founded, season_active_till, league
 ) values
     (1610612744, 'Golden State', 'Warriors', 'GSW', 1946, 2100, 'NBA'),
-    (1610612747, 'Los Angeles', 'Lakers', 'LAL', 1948, 2100, 'NBA');
+    (1610612747, 'Los Angeles', 'Lakers', 'LAL', 1948, 2100, 'NBA'),
+    (9040, 'All-Star', 'All-Star LeBron', 'LBN', 2018, 2100, 'NBA'),
+    (1610610036, 'Sheboygan', 'Red Skins', 'SHE', 1949, 1950, 'NBA');
 
 insert into players (
     player_id, first_name, last_name, birth_date, school, country, height_inches, body_weight_lbs,
