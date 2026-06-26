@@ -1,6 +1,7 @@
 package com.armandorodriguez.nba_premier_predictor.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -76,6 +77,76 @@ class FeatureGenerationIntegrationTests {
                 .containsEntry("back_to_back", false)
                 .containsEntry("is_home", true)
                 .containsEntry("opponent_points_allowed_avg", 105.0);
+    }
+
+    @Test
+    void returnsLatestPlayerFeatureSnapshotWithoutTargets() throws Exception {
+        mockMvc.perform(post("/api/features/player-snapshots/generate").param("season", "2023"))
+                .andExpect(status().isOk());
+
+        String responseJson = mockMvc.perform(get("/api/features/player-snapshots/latest")
+                        .param("gameId", "22300003")
+                        .param("playerId", "201939"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshotType").value("player"))
+                .andExpect(jsonPath("$.gameId").value(22300003))
+                .andExpect(jsonPath("$.playerId").value(201939))
+                .andExpect(jsonPath("$.teamId").value(1610612744))
+                .andExpect(jsonPath("$.homeTeamId").value(1610612744))
+                .andExpect(jsonPath("$.awayTeamId").value(1610612747))
+                .andExpect(jsonPath("$.dataCutoffTime").exists())
+                .andExpect(jsonPath("$.features.games_played_prior").value(2))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<>() {
+        });
+        Map<String, Object> features = nestedMap(response, "features");
+        assertThat(features)
+                .containsEntry("age_at_game", 35)
+                .containsEntry("career_stage", "late_career")
+                .doesNotContainKeys("points", "rebounds", "assists", "fantasyPoints", "targets");
+    }
+
+    @Test
+    void returnsLatestGameFeatureSnapshotWithoutTargets() throws Exception {
+        mockMvc.perform(post("/api/features/game-snapshots/generate").param("season", "2023"))
+                .andExpect(status().isOk());
+
+        String responseJson = mockMvc.perform(get("/api/features/game-snapshots/latest")
+                        .param("gameId", "22300003"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshotType").value("game"))
+                .andExpect(jsonPath("$.gameId").value(22300003))
+                .andExpect(jsonPath("$.homeTeamId").value(1610612744))
+                .andExpect(jsonPath("$.awayTeamId").value(1610612747))
+                .andExpect(jsonPath("$.dataCutoffTime").exists())
+                .andExpect(jsonPath("$.features.home_team_id").value(1610612744))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<>() {
+        });
+        Map<String, Object> features = nestedMap(response, "features");
+        assertThat(features)
+                .containsEntry("season_point_differential_delta", 15.0)
+                .doesNotContainKeys("homeScore", "awayScore", "winnerTeamId", "pointDifferential", "targets");
+    }
+
+    @Test
+    void latestFeatureSnapshotEndpointsReturnNotFoundForMissingSnapshots() throws Exception {
+        mockMvc.perform(get("/api/features/player-snapshots/latest")
+                        .param("gameId", "22300003")
+                        .param("playerId", "201939"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Player feature snapshot not found for game 22300003 and player 201939"));
+
+        mockMvc.perform(get("/api/features/game-snapshots/latest")
+                        .param("gameId", "22300003"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Game feature snapshot not found for game 22300003"));
     }
 
     @Test
@@ -172,5 +243,10 @@ class FeatureGenerationIntegrationTests {
 
     private Integer countRows(String tableName) {
         return jdbcTemplate.queryForObject("select count(*) from " + tableName, Integer.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> nestedMap(Map<String, Object> row, String key) {
+        return (Map<String, Object>) row.get(key);
     }
 }
