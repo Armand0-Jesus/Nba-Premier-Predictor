@@ -58,6 +58,19 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.getByText('Present')).toBeInTheDocument();
   });
 
+  test('shows final season for retired players', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/players');
+
+    render(<App />);
+
+    await user.type(screen.getByLabelText(/Search by player name/i), 'Michael');
+
+    expect(await screen.findByText('Michael Jordan')).toBeInTheDocument();
+    expect(screen.getByText('2002')).toBeInTheDocument();
+    expect(screen.queryByText('Present')).not.toBeInTheDocument();
+  });
+
   test('teams page asks for current NBA teams by default', async () => {
     window.history.pushState({}, '', '/teams');
 
@@ -83,6 +96,7 @@ describe('NBA Premier Predictor frontend', () => {
     expect(await screen.findByText('Expected Stat Line')).toBeInTheDocument();
     expect(screen.getByText('28.4')).toBeInTheDocument();
     expect(screen.getByText('74%')).toBeInTheDocument();
+    expect(window.fetch.mock.calls.some(([url]) => String(url).includes('activeOnly=true'))).toBe(true);
     expect(window.fetch).toHaveBeenCalledWith('/api/predictions/player', expect.objectContaining({ method: 'POST' }));
   });
 
@@ -99,6 +113,16 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.getAllByText('Golden State Warriors').length).toBeGreaterThan(0);
     expect(screen.getByText('63%')).toBeInTheDocument();
     expect(window.fetch).toHaveBeenCalledWith('/api/predictions/game-score', expect.objectContaining({ method: 'POST' }));
+  });
+
+  test('game picker uses season labels and hides raw game ids', async () => {
+    window.history.pushState({}, '', '/predict/game-score');
+
+    render(<App />);
+
+    expect(await screen.findByRole('option', { name: '2023-2024' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Los Angeles Lakers at Golden State Warriors/i })).toBeInTheDocument();
+    expect(screen.queryByText('12300001')).not.toBeInTheDocument();
   });
 
   test('advanced model details are collapsed by default', async () => {
@@ -137,6 +161,18 @@ function defaultFetch(path, options = {}) {
   }
 
   if (path.startsWith('/api/players?')) {
+    if (path.includes('Michael')) {
+      return jsonResponse(page([
+        {
+          id: 893,
+          fullName: 'Michael Jordan',
+          position: 'G',
+          fromYear: 1984,
+          toYear: 2002,
+          active: false,
+        },
+      ]));
+    }
     return jsonResponse(page([
       {
         id: 201939,

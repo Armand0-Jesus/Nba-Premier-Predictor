@@ -56,19 +56,22 @@ a {
 }
 
 button,
-input {
+input,
+select {
   border: 0;
 }
 
 button,
 a,
-input {
+input,
+select {
   outline-offset: 3px;
 }
 
 button:focus-visible,
 a:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible {
   outline: 2px solid var(--orange-strong);
 }
 
@@ -442,8 +445,9 @@ button:disabled {
 }
 
 .choice-card {
-  display: grid;
-  gap: 7px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-height: 84px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -451,6 +455,12 @@ button:disabled {
   background: rgba(255, 255, 255, 0.03);
   color: var(--text);
   text-align: left;
+}
+
+.choice-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 
 .choice-card strong {
@@ -509,6 +519,86 @@ button:disabled {
   border-radius: 6px;
   background: #080a0e;
   color: var(--text);
+}
+
+.field select {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #080a0e;
+  color: var(--text);
+}
+
+.identity-panel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.identity-panel strong {
+  display: block;
+  font-size: 1.35rem;
+}
+
+.identity-panel p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.identity-cell,
+.matchup-cell,
+.team-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.matchup-cell {
+  flex-wrap: wrap;
+}
+
+.team-side span:last-child,
+.identity-cell span:last-child {
+  min-width: 0;
+}
+
+.at-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.avatar {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--orange-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.avatar-square {
+  border-radius: 6px;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-square img {
+  padding: 4px;
+  object-fit: contain;
 }
 
 .error-banner {

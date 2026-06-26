@@ -13,10 +13,16 @@ public interface PlayerRepository extends JpaRepository<Player, Long> {
     @Query("""
             select p
             from Player p
-            where :query is null
+            where (:query is null
                or lower(concat(coalesce(p.firstName, ''), ' ', coalesce(p.lastName, '')))
                     like lower(concat('%', :query, '%'))
-               or cast(p.id as string) = :query
+               or cast(p.id as string) = :query)
+              and (:activeOnly = false
+                or (p.nbaFlag = true and (p.toYear is null or p.toYear >= :currentSeasonStart)))
             """)
-    Page<Player> search(@Param("query") String query, Pageable pageable);
+    Page<Player> search(
+            @Param("query") String query,
+            @Param("activeOnly") boolean activeOnly,
+            @Param("currentSeasonStart") int currentSeasonStart,
+            Pageable pageable);
 }

@@ -40,7 +40,27 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.content", hasSize(1)))
                 .andExpect(jsonPath("$.content[0].id").value(201939))
                 .andExpect(jsonPath("$.content[0].fullName").value("Stephen Curry"))
-                .andExpect(jsonPath("$.content[0].position").value("G"));
+                .andExpect(jsonPath("$.content[0].position").value("G"))
+                .andExpect(jsonPath("$.content[0].active").value(true));
+    }
+
+    @Test
+    void retiredPlayersAreNotMarkedActive() throws Exception {
+        mockMvc.perform(get("/api/players").param("query", "Michael Jordan"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].id").value(893))
+                .andExpect(jsonPath("$.content[0].toYear").value(2002))
+                .andExpect(jsonPath("$.content[0].active").value(false));
+    }
+
+    @Test
+    void playersEndpointCanFilterToActivePlayers() throws Exception {
+        mockMvc.perform(get("/api/players")
+                        .param("query", "Michael Jordan")
+                        .param("activeOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(0)));
     }
 
     @Test

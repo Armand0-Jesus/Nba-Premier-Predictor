@@ -52,6 +52,9 @@ const navItems = [
   { to: '/history', label: 'History', icon: History },
 ];
 
+const seasonOptions = Array.from({ length: 12 }, (_, index) => 2025 - index);
+const defaultSeason = '2023';
+
 function App() {
   return (
     <BrowserRouter>
@@ -217,7 +220,7 @@ function PlayersPage() {
       requireQuery
       emptyBeforeSearch="Search for a player to begin"
       columns={[
-        ['fullName', 'Player'],
+        ['fullName', 'Player', (_, row) => <PlayerIdentity player={row} />],
         ['position', 'Role', readablePosition],
         ['fromYear', 'From'],
         ['toYear', 'Through', playerEndYear],
@@ -235,7 +238,7 @@ function TeamsPage() {
       searchPlaceholder="Search current teams"
       baseParams={{ currentOnly: 'true', size: '30' }}
       columns={[
-        ['fullName', 'Team'],
+        ['fullName', 'Team', (_, row) => <TeamIdentity team={row} />],
         ['abbreviation', 'Abbr'],
         ['seasonFounded', 'Founded'],
         ['seasonActiveTill', 'Through', teamEndYear],
@@ -246,9 +249,9 @@ function TeamsPage() {
 }
 
 function GamesPage() {
-  const [season, setSeason] = useState('2023');
+  const [season, setSeason] = useState(defaultSeason);
   const [page, setPage] = useState(0);
-  const query = new URLSearchParams({ page, size: 20 });
+  const query = new URLSearchParams({ page, size: 30 });
   if (season) query.set('season', season);
   const result = useApi(`/api/games?${query.toString()}`);
   const rows = pageItems(result.data);
@@ -258,7 +261,10 @@ function GamesPage() {
       <section className="panel">
         <div className="toolbar">
           <Field label="Season">
-            <input value={season} onChange={(event) => setSeason(event.target.value)} inputMode="numeric" />
+            <SeasonSelect value={season} onChange={(value) => {
+              setSeason(value);
+              setPage(0);
+            }} />
           </Field>
           <button className="icon-button" type="button" onClick={() => setPage(0)}>
             <Search size={17} />
@@ -268,11 +274,9 @@ function GamesPage() {
         <DataTable
           rows={rows}
           columns={[
-            ['gameDate', 'Date'],
-            ['awayTeamName', 'Away'],
-            ['homeTeamName', 'Home'],
-            ['awayScore', 'Away Pts'],
-            ['homeScore', 'Home Pts'],
+            ['gameDateTimeEst', 'Date', formatShortDate],
+            ['id', 'Matchup', (_, row) => <MatchupLabel game={row} />],
+            ['homeScore', 'Score', (_, row) => scoreText(row)],
           ]}
           action={(row) => (
             <Link to={`/predict/game-score?gameId=${row.id}`} className="mini-link">
@@ -298,6 +302,14 @@ function PlayerDetailPage() {
       <ErrorBanner message={result.error} />
       {data && (
         <>
+          <section className="panel identity-panel">
+            <PlayerAvatar player={data.player} />
+            <div>
+              <span>{readablePosition(data.player.position)}</span>
+              <strong>{cleanName(data.player.fullName)}</strong>
+              <p>{data.player.fromYear || 'Unknown'} to {playerEndYear(data.player.toYear, data.player)}</p>
+            </div>
+          </section>
           <div className="dashboard-grid">
             <StatusPanel title="Role" value={readablePosition(data.player.position)} icon={Users} />
             <StatusPanel title="Season Points" value={compactNumber(data.averages?.points)} icon={Target} />
@@ -307,9 +319,9 @@ function PlayerDetailPage() {
             <PanelHeader title="Recent Scoring" icon={BarChart3} />
             <ChartFrame empty={!recentGames.length} emptyLabel="No recent games">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={recentGames}>
+                <BarChart data={recentGames.map((row) => ({ ...row, label: formatShortDate(row.gameDateTimeEst) }))}>
                   <CartesianGrid stroke="rgba(255,255,255,.08)" vertical={false} />
-                  <XAxis dataKey="gameId" stroke="#8d929f" tickLine={false} />
+                  <XAxis dataKey="label" stroke="#8d929f" tickLine={false} />
                   <YAxis stroke="#8d929f" tickLine={false} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Bar dataKey="points" fill="#f77f00" radius={[4, 4, 0, 0]} />
@@ -335,18 +347,26 @@ function TeamDetailPage() {
       <ErrorBanner message={result.error} />
       {data && (
         <>
+          <section className="panel identity-panel">
+            <TeamLogo team={data.team} />
+            <div>
+              <span>{data.team.abbreviation || 'NBA'}</span>
+              <strong>{cleanName(data.team.fullName)}</strong>
+              <p>Founded {data.team.seasonFounded || 'Unknown'}</p>
+            </div>
+          </section>
           <div className="dashboard-grid">
             <StatusPanel title="Abbreviation" value={data.team.abbreviation} icon={ShieldCheck} />
-            <StatusPanel title="League" value={data.team.league} icon={Trophy} />
+            <StatusPanel title="Through" value={teamEndYear(data.team.seasonActiveTill)} icon={Trophy} />
             <StatusPanel title="Founded" value={data.team.seasonFounded} icon={CalendarDays} />
           </div>
           <section className="panel panel-wide">
             <PanelHeader title="Recent Team Scores" icon={BarChart3} />
             <ChartFrame empty={!recentGames.length} emptyLabel="No recent games">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={recentGames}>
+                <BarChart data={recentGames.map((row) => ({ ...row, label: formatShortDate(row.gameDateTimeEst) }))}>
                   <CartesianGrid stroke="rgba(255,255,255,.08)" vertical={false} />
-                  <XAxis dataKey="gameId" stroke="#8d929f" tickLine={false} />
+                  <XAxis dataKey="label" stroke="#8d929f" tickLine={false} />
                   <YAxis stroke="#8d929f" tickLine={false} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Bar dataKey="teamScore" fill="#f77f00" radius={[4, 4, 0, 0]} />
@@ -363,7 +383,7 @@ function TeamDetailPage() {
 
 function PlayerPredictionPage({ mode }) {
   const [searchParams] = useSearchParams();
-  const [season, setSeason] = useState('2023');
+  const [season, setSeason] = useState(defaultSeason);
   const [playerQuery, setPlayerQuery] = useState(searchParams.get('player') || '');
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [selectedGame, setSelectedGame] = useState(null);
@@ -373,11 +393,11 @@ function PlayerPredictionPage({ mode }) {
   const [error, setError] = useState('');
   const title = mode === 'fantasy' ? 'Fantasy Pick' : 'Player Pick';
   const searchPath = playerQuery.trim().length >= 2
-    ? `/api/players?query=${encodeURIComponent(playerQuery.trim())}&size=6`
+    ? `/api/players?query=${encodeURIComponent(playerQuery.trim())}&activeOnly=true&size=6`
     : null;
   const playerSearch = useApi(searchPath);
   const gamesPath = selectedPlayer
-    ? `/api/players/${selectedPlayer.id}/games?season=${encodeURIComponent(season)}&size=12`
+    ? `/api/players/${selectedPlayer.id}/games?season=${encodeURIComponent(season)}&size=30`
     : null;
   const playerGames = useApi(gamesPath);
 
@@ -429,7 +449,12 @@ function PlayerPredictionPage({ mode }) {
             />
           </Field>
           <Field label="Season">
-            <input value={season} onChange={(event) => setSeason(event.target.value)} inputMode="numeric" />
+            <SeasonSelect value={season} onChange={(value) => {
+              setSeason(value);
+              setSelectedGame(null);
+              setPrediction(null);
+              setSnapshot(null);
+            }} />
           </Field>
         </div>
 
@@ -440,8 +465,9 @@ function PlayerPredictionPage({ mode }) {
           empty={playerQuery.trim().length < 2 ? 'Type at least 2 letters' : playerSearch.error || 'No players found'}
           selectedId={selectedPlayer?.id}
           getId={(row) => row.id}
-          getTitle={(row) => row.fullName}
-          getMeta={(row) => `${readablePosition(row.position)} - ${playerEndYear(row)}`}
+          getTitle={(row) => cleanName(row.fullName)}
+          getMeta={(row) => `${readablePosition(row.position)} - ${playerEndYear(row.toYear, row)}`}
+          getImage={(row) => playerHeadshotUrl(row.id)}
           onChoose={choosePlayer}
         />
 
@@ -478,13 +504,13 @@ function PlayerPredictionPage({ mode }) {
 
 function GameScorePredictionPage() {
   const [searchParams] = useSearchParams();
-  const [season, setSeason] = useState('2023');
+  const [season, setSeason] = useState(defaultSeason);
   const [selectedGame, setSelectedGame] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const games = useApi(`/api/games?season=${encodeURIComponent(season)}&size=12`);
+  const games = useApi(`/api/games?season=${encodeURIComponent(season)}&size=30`);
 
   useEffect(() => {
     const gameId = searchParams.get('gameId');
@@ -524,7 +550,12 @@ function GameScorePredictionPage() {
       <section className="panel workbench">
         <div className="toolbar">
           <Field label="Season">
-            <input value={season} onChange={(event) => setSeason(event.target.value)} inputMode="numeric" />
+            <SeasonSelect value={season} onChange={(value) => {
+              setSeason(value);
+              setSelectedGame(null);
+              setPrediction(null);
+              setSnapshot(null);
+            }} />
           </Field>
         </div>
         <ChoiceList
@@ -599,9 +630,7 @@ function HistoryPage() {
         <DataTable
           rows={rows}
           columns={[
-            ['predictionType', 'Type', labelize],
-            ['gameId', 'Game'],
-            ['playerId', 'Player'],
+            ['predictionType', 'Pick', labelize],
             ['confidenceScore', 'Confidence', percent],
             ['requestedAt', 'Requested'],
           ]}
@@ -659,7 +688,7 @@ function EntityList({
   );
 }
 
-function ChoiceList({ title, rows, loading, empty, selectedId, getId, getTitle, getMeta, onChoose }) {
+function ChoiceList({ title, rows, loading, empty, selectedId, getId, getTitle, getMeta, getImage, onChoose }) {
   return (
     <div className="choice-section">
       <h3>{title}</h3>
@@ -676,8 +705,11 @@ function ChoiceList({ title, rows, loading, empty, selectedId, getId, getTitle, 
                 key={id}
                 onClick={() => onChoose(row)}
               >
-                <strong>{getTitle(row)}</strong>
-                <span>{getMeta(row)}</span>
+                {getImage && <AvatarImage src={getImage(row)} label={getTitle(row)} />}
+                <span className="choice-copy">
+                  <strong>{getTitle(row)}</strong>
+                  <span>{getMeta(row)}</span>
+                </span>
               </button>
             );
           })}
@@ -835,7 +867,7 @@ function GameLogTable({ rows }) {
       <DataTable
         rows={rows}
         columns={[
-          ['gameDateTimeEst', 'Date'],
+          ['gameDateTimeEst', 'Date', formatShortDate],
           ['teamName', 'Team'],
           ['points', 'PTS'],
           ['rebounds', 'REB'],
@@ -899,6 +931,73 @@ function Field({ label, children }) {
   );
 }
 
+function SeasonSelect({ value, onChange }) {
+  return (
+    <select value={value} onChange={(event) => onChange(event.target.value)}>
+      {seasonOptions.map((season) => (
+        <option key={season} value={season}>
+          {seasonLabel(season)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function PlayerIdentity({ player }) {
+  return (
+    <span className="identity-cell">
+      <PlayerAvatar player={player} />
+      <span>{cleanName(player?.fullName)}</span>
+    </span>
+  );
+}
+
+function TeamIdentity({ team }) {
+  return (
+    <span className="identity-cell">
+      <TeamLogo team={team} />
+      <span>{cleanName(team?.fullName)}</span>
+    </span>
+  );
+}
+
+function MatchupLabel({ game }) {
+  return (
+    <span className="matchup-cell">
+      <span className="team-side">
+        <TeamLogo team={{ id: game.awayTeamId, fullName: game.awayTeamName }} />
+        <span>{cleanName(game.awayTeamName) || 'Away'}</span>
+      </span>
+      <span className="at-label">at</span>
+      <span className="team-side">
+        <TeamLogo team={{ id: game.homeTeamId, fullName: game.homeTeamName }} />
+        <span>{cleanName(game.homeTeamName) || 'Home'}</span>
+      </span>
+    </span>
+  );
+}
+
+function PlayerAvatar({ player }) {
+  return <AvatarImage src={playerHeadshotUrl(player?.id)} label={cleanName(player?.fullName)} />;
+}
+
+function TeamLogo({ team }) {
+  return <AvatarImage src={teamLogoUrl(team?.id)} label={cleanName(team?.fullName)} square />;
+}
+
+function AvatarImage({ src, label, square = false }) {
+  const [failed, setFailed] = useState(false);
+  const initials = initialsFor(label);
+  if (!src || failed) {
+    return <span className={`avatar ${square ? 'avatar-square' : ''}`}>{initials}</span>;
+  }
+  return (
+    <span className={`avatar ${square ? 'avatar-square' : ''}`}>
+      <img src={src} alt="" onError={() => setFailed(true)} loading="lazy" />
+    </span>
+  );
+}
+
 function StatusPanel({ title, value, subvalue, error, icon: Icon }) {
   return (
     <section className={`panel status-panel ${error ? 'panel-error' : ''}`}>
@@ -949,6 +1048,13 @@ function ErrorBanner({ message }) {
   return <div className="error-banner">{message}</div>;
 }
 
+function friendlyError(error) {
+  const message = typeof error === 'string' ? error : error?.message || '';
+  if (/status 404/i.test(message)) return 'That data is not available yet. Try a different game.';
+  if (/status 5\d\d/i.test(message)) return 'Something went wrong loading that data. Try another option or refresh.';
+  return message;
+}
+
 function Pager({ page, setPage, last }) {
   return (
     <div className="pager">
@@ -982,7 +1088,7 @@ function useApi(path) {
         if (active) setState({ data, error: '', loading: false });
       })
       .catch((err) => {
-        if (active) setState({ data: null, error: err.message, loading: false });
+        if (active) setState({ data: null, error: friendlyError(err), loading: false });
       });
     return () => {
       active = false;
@@ -1012,12 +1118,19 @@ function playerTrainingRows(metrics) {
   return metrics?.playerTrainedRows ?? metrics?.trainedRows;
 }
 
+function seasonLabel(value) {
+  const start = Number(value);
+  return Number.isFinite(start) ? `${start}-${start + 1}` : 'Unknown';
+}
+
 function formatColumn(row, [key, , formatter]) {
   return formatter ? formatter(row[key], row) : formatCell(row[key]);
 }
 
 function playerEndYear(value, row) {
-  if (row?.active) return 'Present';
+  if (row?.active && (value === null || value === undefined || Number(value) >= currentSeasonStartYear())) {
+    return 'Present';
+  }
   return value || 'Unknown';
 }
 
@@ -1035,7 +1148,7 @@ function readablePosition(value) {
 
 function playerGameTitle(row) {
   const location = row.home ? 'home' : 'away';
-  return `${formatDateTime(row.gameDateTimeEst)} ${location} game`;
+  return `${formatShortDate(row.gameDateTimeEst)} ${location} game`;
 }
 
 function playerGameMeta(row) {
@@ -1044,11 +1157,11 @@ function playerGameMeta(row) {
 }
 
 function gameTitle(row) {
-  return `${row.awayTeamName || 'Away'} at ${row.homeTeamName || 'Home'}`;
+  return `${cleanName(row.awayTeamName) || 'Away'} at ${cleanName(row.homeTeamName) || 'Home'}`;
 }
 
 function gameMeta(row) {
-  return `${formatDateTime(row.gameDateTimeEst || row.gameDate)} - ${scoreText(row)}`;
+  return `${formatShortDate(row.gameDateTimeEst || row.gameDate)} - ${scoreText(row)}`;
 }
 
 function scoreText(row) {
@@ -1081,6 +1194,29 @@ function titleCase(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function cleanName(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text && text.toLowerCase() !== 'null' ? text : 'Unknown';
+}
+
+function initialsFor(value) {
+  return cleanName(value)
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase() || 'NBA';
+}
+
+function playerHeadshotUrl(playerId) {
+  return playerId ? `https://cdn.nba.com/headshots/nba/latest/1040x760/${playerId}.png` : '';
+}
+
+function teamLogoUrl(teamId) {
+  return teamId ? `https://cdn.nba.com/logos/nba/${teamId}/primary/L/logo.svg` : '';
+}
+
 function formatCell(value) {
   if (value === null || value === undefined || value === '') return 'Unknown';
   if (typeof value === 'number') return Number.isInteger(value) ? value : compactNumber(value, 2);
@@ -1092,6 +1228,17 @@ function formatCell(value) {
 function formatDateTime(value) {
   if (!value) return 'Unknown';
   return String(value).replace('T', ' ').replace(/\.\d+$/, '');
+}
+
+function formatShortDate(value) {
+  if (!value) return 'Unknown';
+  const [date] = String(value).split('T');
+  return date || 'Unknown';
+}
+
+function currentSeasonStartYear() {
+  const today = new Date();
+  return today.getMonth() >= 9 ? today.getFullYear() : today.getFullYear() - 1;
 }
 
 const tooltipStyle = {

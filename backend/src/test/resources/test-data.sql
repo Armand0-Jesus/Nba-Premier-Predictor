@@ -14,7 +14,9 @@ insert into players (
     (201939, 'Stephen', 'Curry', '1988-03-14', 'Davidson', 'USA', 74, 185,
      '30', true, false, false, false, true, true, 2009, 1, 7, 2009, 2026),
     (2544, 'LeBron', 'James', '1984-12-30', null, 'USA', 81, 250,
-     '23', false, true, false, false, true, true, 2003, 1, 1, 2003, 2026);
+     '23', false, true, false, false, true, true, 2003, 1, 1, 2003, 2026),
+    (893, 'Michael', 'Jordan', '1963-02-17', 'North Carolina', 'USA', 78, 216,
+     '23', true, false, false, false, true, true, 1984, 1, 3, 1984, 2002);
 
 insert into games (
     game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id,

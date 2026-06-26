@@ -17,7 +17,7 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             from Game g
             where (:season is null or g.seasonStartYear = :season)
               and (:teamId is null or g.homeTeamId = :teamId or g.awayTeamId = :teamId)
-              and (:gameType is null or lower(g.gameType) = lower(:gameType))
+              and (:gameType is null or lower(g.gameType) = :gameType)
             order by g.gameDateTimeEst desc
             """)
     Page<Game> search(

@@ -1,6 +1,7 @@
 package com.armandorodriguez.nba_premier_predictor.service;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Base64;
 
@@ -60,16 +61,18 @@ public class PlayerService {
                 : searchCacheTtl;
     }
 
-    public Page<PlayerSummaryResponse> search(String query, Pageable pageable) {
+    public Page<PlayerSummaryResponse> search(String query, boolean activeOnly, Pageable pageable) {
         String cleanedQuery = clean(query);
-        String cacheKey = playerSearchKey(cleanedQuery, pageable);
+        String cacheKey = playerSearchKey(cleanedQuery, activeOnly, pageable);
         if (searchCacheEnabled) {
             Page<PlayerSummaryResponse> cached = cachedPlayerSearch(cacheKey, pageable);
             if (cached != null) {
                 return cached;
             }
         }
-        Page<PlayerSummaryResponse> page = playerRepository.search(cleanedQuery, pageable).map(PlayerSummaryResponse::from);
+        Page<PlayerSummaryResponse> page = playerRepository
+                .search(cleanedQuery, activeOnly, currentSeasonStartYear(), pageable)
+                .map(PlayerSummaryResponse::from);
         cachePlayerSearch(cacheKey, page);
         return page;
     }
@@ -110,6 +113,11 @@ public class PlayerService {
         return query == null || query.isBlank() ? null : query.trim();
     }
 
+    private static int currentSeasonStartYear() {
+        LocalDate today = LocalDate.now();
+        return today.getMonthValue() >= 10 ? today.getYear() : today.getYear() - 1;
+    }
+
     private Page<PlayerSummaryResponse> cachedPlayerSearch(String cacheKey, Pageable pageable) {
         try {
             String json = redisTemplate.opsForValue().get(cacheKey);
@@ -137,9 +145,10 @@ public class PlayerService {
         }
     }
 
-    private static String playerSearchKey(String query, Pageable pageable) {
-        String rawKey = "%s|%d|%d|%s".formatted(
+    private static String playerSearchKey(String query, boolean activeOnly, Pageable pageable) {
+        String rawKey = "%s|%s|%d|%d|%s".formatted(
                 query == null ? "" : query,
+                activeOnly,
                 pageable.getPageNumber(),
                 pageable.getPageSize(),
                 pageable.getSort());

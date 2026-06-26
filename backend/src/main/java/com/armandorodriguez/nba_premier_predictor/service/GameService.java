@@ -32,6 +32,6 @@ public class GameService {
     }
 
     private static String clean(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
+        return value == null || value.isBlank() ? null : value.trim().toLowerCase();
     }
 }

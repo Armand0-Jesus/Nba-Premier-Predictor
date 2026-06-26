@@ -31,8 +31,9 @@ public class PlayerController {
     @GetMapping
     Page<PlayerSummaryResponse> search(
             @RequestParam(required = false) String query,
+            @RequestParam(defaultValue = "false") boolean activeOnly,
             @PageableDefault(size = 20, sort = "lastName") Pageable pageable) {
-        return playerService.search(query, pageable);
+        return playerService.search(query, activeOnly, pageable);
     }
 
     @GetMapping("/{playerId}")
