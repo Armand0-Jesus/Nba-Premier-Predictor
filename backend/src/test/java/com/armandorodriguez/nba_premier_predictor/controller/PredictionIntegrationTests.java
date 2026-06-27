@@ -155,6 +155,16 @@ class PredictionIntegrationTests {
                 .andExpect(jsonPath("$.activeModel.modelType").value("ridge-regression"));
     }
 
+    @Test
+    void modelEvaluationEndpointReturnsHitRateMetrics() throws Exception {
+        mockMvc.perform(post("/api/model/evaluate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.playerBaseline.metrics.projected_points.hitRate").value(0.72))
+                .andExpect(jsonPath("$.playerBaseline.metrics.projected_points.hitThreshold").value(5))
+                .andExpect(jsonPath("$.gameScoreBaseline.metrics.home_team_score.hitRate").value(0.64))
+                .andExpect(jsonPath("$.gameScoreBaseline.metrics.home_team_score.hitThreshold").value(10));
+    }
+
     private Integer countRows(String tableName) {
         return jdbcTemplate.queryForObject("select count(*) from " + tableName, Integer.class);
     }
@@ -246,6 +256,19 @@ class PredictionIntegrationTests {
             return Map.of("activeModel", Map.of(
                     "versionName", "player-baseline-v1",
                     "modelType", "ridge-regression"));
+        }
+
+        @Override
+        public Map<String, Object> evaluateModels() {
+            return Map.of(
+                    "modelVersion", "player-baseline-v1",
+                    "trainedRows", 30034,
+                    "playerBaseline", Map.of(
+                            "metrics", Map.of(
+                                    "projected_points", Map.of("mae", 4.5, "rmse", 6.1, "hitRate", 0.72, "hitThreshold", 5))),
+                    "gameScoreBaseline", Map.of(
+                            "metrics", Map.of(
+                                    "home_team_score", Map.of("mae", 9.5, "rmse", 12.4, "hitRate", 0.64, "hitThreshold", 10))));
         }
 
         private static PlayerPredictionResponse prediction(PlayerPredictionRequest request) {

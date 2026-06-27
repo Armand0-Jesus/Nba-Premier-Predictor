@@ -14,6 +14,7 @@ import com.armandorodriguez.nba_premier_predictor.domain.Team;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamDashboardResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamGameLogResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.SeasonResponse;
 import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundException;
 import com.armandorodriguez.nba_premier_predictor.repository.TeamGameStatsRepository;
 import com.armandorodriguez.nba_premier_predictor.repository.TeamRepository;
@@ -32,10 +33,12 @@ public class TeamService {
 
     private final TeamRepository teamRepository;
     private final TeamGameStatsRepository statsRepository;
+    private final SeasonService seasonService;
 
-    public TeamService(TeamRepository teamRepository, TeamGameStatsRepository statsRepository) {
+    public TeamService(TeamRepository teamRepository, TeamGameStatsRepository statsRepository, SeasonService seasonService) {
         this.teamRepository = teamRepository;
         this.statsRepository = statsRepository;
+        this.seasonService = seasonService;
     }
 
     public Page<TeamResponse> search(String query, boolean currentOnly, Pageable pageable) {
@@ -51,11 +54,20 @@ public class TeamService {
     public TeamDashboardResponse dashboard(Long teamId, Integer season) {
         Team team = findTeam(teamId);
         List<TeamGameLogResponse> recentGames = statsRepository
-                .findRecent(teamId, season, PageRequest.of(0, 10))
-                .stream()
+                .findGameLogs(teamId, season, null, PageRequest.of(0, 10))
                 .map(TeamGameLogResponse::from)
                 .toList();
         return new TeamDashboardResponse(TeamResponse.from(team), recentGames);
+    }
+
+    public Page<TeamGameLogResponse> gameLogs(Long teamId, Integer season, String query, Pageable pageable) {
+        findTeam(teamId);
+        return statsRepository.findGameLogs(teamId, season, searchPattern(query), pageable).map(TeamGameLogResponse::from);
+    }
+
+    public List<SeasonResponse> seasons(Long teamId) {
+        findTeam(teamId);
+        return seasonService.teamSeasons(teamId);
     }
 
     private Team findTeam(Long teamId) {
@@ -65,5 +77,10 @@ public class TeamService {
 
     private static String clean(String query) {
         return query == null || query.isBlank() ? null : query.trim();
+    }
+
+    private static String searchPattern(String query) {
+        String cleaned = clean(query);
+        return cleaned == null ? null : "%" + cleaned.toLowerCase() + "%";
     }
 }

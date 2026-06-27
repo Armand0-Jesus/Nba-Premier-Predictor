@@ -54,6 +54,16 @@ public class FeatureSnapshotQueryService {
                         "Game feature snapshot not found for game " + gameId));
     }
 
+    public Integer seasonForGame(Long gameId) {
+        return jdbcTemplate.query("""
+                select season_start_year
+                from games
+                where game_id = ?
+                """, (rs, rowNum) -> nullableInt(rs, "season_start_year"), gameId).stream()
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Game not found: " + gameId));
+    }
+
     private FeatureSnapshotResponse mapPlayerSnapshot(ResultSet rs, int rowNum) throws SQLException {
         return new FeatureSnapshotResponse(
                 rs.getLong("id"),
@@ -93,6 +103,11 @@ public class FeatureSnapshotQueryService {
 
     private static Long nullableLong(ResultSet rs, String column) throws SQLException {
         long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
+    }
+
+    private static Integer nullableInt(ResultSet rs, String column) throws SQLException {
+        int value = rs.getInt(column);
         return rs.wasNull() ? null : value;
     }
 }

@@ -18,11 +18,19 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             where (:season is null or g.seasonStartYear = :season)
               and (:teamId is null or g.homeTeamId = :teamId or g.awayTeamId = :teamId)
               and (:gameType is null or lower(g.gameType) = :gameType)
+              and (:query is null or lower(concat(
+                    coalesce(g.homeTeamCity, ''), ' ', coalesce(g.homeTeamName, ''), ' ',
+                    coalesce(g.awayTeamCity, ''), ' ', coalesce(g.awayTeamName, ''), ' ',
+                    coalesce(g.gameLabel, ''), ' ', coalesce(g.gameSubLabel, ''), ' ',
+                    coalesce(g.arenaName, ''), ' ', coalesce(g.arenaCity, ''), ' ',
+                    cast(g.id as string), ' ', cast(g.gameDate as string)
+                  )) like :query)
             order by g.gameDateTimeEst desc
             """)
     Page<Game> search(
             @Param("season") Integer season,
             @Param("teamId") Long teamId,
             @Param("gameType") String gameType,
+            @Param("query") String query,
             Pageable pageable);
 }

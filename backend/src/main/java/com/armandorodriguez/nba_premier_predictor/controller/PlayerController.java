@@ -1,5 +1,7 @@
 package com.armandorodriguez.nba_premier_predictor.controller;
 
+import java.util.List;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -15,6 +17,7 @@ import com.armandorodriguez.nba_premier_predictor.dto.PlayerDashboardResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerDetailResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerGameLogResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerSummaryResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.SeasonResponse;
 import com.armandorodriguez.nba_premier_predictor.service.PlayerService;
 
 @Validated
@@ -45,8 +48,14 @@ public class PlayerController {
     Page<PlayerGameLogResponse> games(
             @PathVariable Long playerId,
             @RequestParam(required = false) Integer season,
+            @RequestParam(required = false) String query,
             @PageableDefault(size = 20) Pageable pageable) {
-        return playerService.gameLogs(playerId, season, pageable);
+        return playerService.gameLogs(playerId, season, query, pageable);
+    }
+
+    @GetMapping("/{playerId}/seasons")
+    List<SeasonResponse> seasons(@PathVariable Long playerId) {
+        return playerService.seasons(playerId);
     }
 
     @GetMapping("/{playerId}/averages")

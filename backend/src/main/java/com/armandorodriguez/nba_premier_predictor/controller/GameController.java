@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.armandorodriguez.nba_premier_predictor.dto.GameResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.GameBoxScoreResponse;
 import com.armandorodriguez.nba_premier_predictor.service.GameService;
 
 @Validated
@@ -29,12 +30,18 @@ public class GameController {
             @RequestParam(required = false) Integer season,
             @RequestParam(required = false) Long teamId,
             @RequestParam(required = false) String gameType,
+            @RequestParam(required = false) String query,
             @PageableDefault(size = 20) Pageable pageable) {
-        return gameService.search(season, teamId, gameType, pageable);
+        return gameService.search(season, teamId, gameType, query, pageable);
     }
 
     @GetMapping("/{gameId}")
     GameResponse get(@PathVariable Long gameId) {
         return gameService.get(gameId);
+    }
+
+    @GetMapping("/{gameId}/box-score")
+    GameBoxScoreResponse boxScore(@PathVariable Long gameId) {
+        return gameService.boxScore(gameId);
     }
 }

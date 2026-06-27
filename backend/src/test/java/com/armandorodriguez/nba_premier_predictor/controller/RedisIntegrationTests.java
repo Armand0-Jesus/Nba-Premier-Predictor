@@ -218,6 +218,11 @@ class RedisIntegrationTests {
                             "modelType", "ridge-regression"));
         }
 
+        @Override
+        public Map<String, Object> evaluateModels() {
+            return modelMetrics();
+        }
+
         void reset() {
             playerPredictionCalls.set(0);
         }

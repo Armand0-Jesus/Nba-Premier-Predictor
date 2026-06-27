@@ -87,9 +87,33 @@ class CoreApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
                 .andExpect(jsonPath("$.content[0].gameId").value(12300001))
+                .andExpect(jsonPath("$.content[0].seasonLabel").value("2023-2024"))
+                .andExpect(jsonPath("$.content[0].opponentTeamName").value("Los Angeles Lakers"))
+                .andExpect(jsonPath("$.content[0].teamScore").value(120))
+                .andExpect(jsonPath("$.content[0].opponentScore").value(115))
                 .andExpect(jsonPath("$.content[0].points").value(32))
                 .andExpect(jsonPath("$.content[0].assists").value(7))
                 .andExpect(jsonPath("$.content[0].rebounds").value(5));
+    }
+
+    @Test
+    void playerGamesEndpointSupportsOpponentSearch() throws Exception {
+        mockMvc.perform(get("/api/players/201939/games")
+                        .param("season", "2023")
+                        .param("query", "Lakers"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].gameId").value(12300001));
+    }
+
+    @Test
+    void playerSeasonsEndpointReturnsReadableLabels() throws Exception {
+        mockMvc.perform(get("/api/players/201939/seasons"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].seasonStartYear").value(2023))
+                .andExpect(jsonPath("$[0].label").value("2023-2024"))
+                .andExpect(jsonPath("$[0].gameCount").value(1));
     }
 
     @Test
@@ -131,5 +155,61 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.content[0].awayTeamName").value("Los Angeles Lakers"))
                 .andExpect(jsonPath("$.content[0].homeScore").value(120))
                 .andExpect(jsonPath("$.content[0].awayScore").value(115));
+    }
+
+    @Test
+    void seasonsEndpointReturnsImportedSeasons() throws Exception {
+        mockMvc.perform(get("/api/seasons"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].seasonStartYear").value(2023))
+                .andExpect(jsonPath("$[0].label").value("2023-2024"))
+                .andExpect(jsonPath("$[0].gameCount").value(1));
+    }
+
+    @Test
+    void teamGamesEndpointReturnsOpponentAndScoreContext() throws Exception {
+        mockMvc.perform(get("/api/teams/1610612744/games")
+                        .param("season", "2023")
+                        .param("query", "Lakers"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].gameId").value(12300001))
+                .andExpect(jsonPath("$.content[0].seasonLabel").value("2023-2024"))
+                .andExpect(jsonPath("$.content[0].opponentTeamName").value("Los Angeles Lakers"))
+                .andExpect(jsonPath("$.content[0].teamScore").value(120))
+                .andExpect(jsonPath("$.content[0].opponentScore").value(115));
+    }
+
+    @Test
+    void teamSeasonsEndpointReturnsReadableLabels() throws Exception {
+        mockMvc.perform(get("/api/teams/1610612744/seasons"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].seasonStartYear").value(2023))
+                .andExpect(jsonPath("$[0].label").value("2023-2024"));
+    }
+
+    @Test
+    void gamesEndpointSupportsMatchupSearch() throws Exception {
+        mockMvc.perform(get("/api/games")
+                        .param("season", "2023")
+                        .param("query", "Lakers"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].id").value(12300001));
+    }
+
+    @Test
+    void gameBoxScoreEndpointReturnsTeamTotalsAndPlayerRows() throws Exception {
+        mockMvc.perform(get("/api/games/12300001/box-score"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.game.id").value(12300001))
+                .andExpect(jsonPath("$.homeTeam.teamId").value(1610612744))
+                .andExpect(jsonPath("$.awayTeam.teamId").value(1610612747))
+                .andExpect(jsonPath("$.homePlayers", hasSize(1)))
+                .andExpect(jsonPath("$.awayPlayers", hasSize(1)))
+                .andExpect(jsonPath("$.homePlayers[0].playerName").value("Stephen Curry"))
+                .andExpect(jsonPath("$.awayPlayers[0].playerName").value("LeBron James"));
     }
 }

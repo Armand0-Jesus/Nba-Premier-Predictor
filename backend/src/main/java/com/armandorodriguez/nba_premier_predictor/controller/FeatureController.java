@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.armandorodriguez.nba_premier_predictor.dto.FeatureGenerationResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.FeatureSnapshotResponse;
+import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundException;
 import com.armandorodriguez.nba_premier_predictor.service.FeatureSnapshotQueryService;
 import com.armandorodriguez.nba_premier_predictor.service.PlayerFeatureSnapshotService;
 import com.armandorodriguez.nba_premier_predictor.service.TeamFeatureSnapshotService;
@@ -37,6 +38,26 @@ public class FeatureController {
     @GetMapping("/game-snapshots/latest")
     FeatureSnapshotResponse latestGameSnapshot(@RequestParam Long gameId) {
         return featureSnapshotQueryService.latestGameSnapshot(gameId);
+    }
+
+    @PostMapping("/player-snapshots/ensure")
+    FeatureSnapshotResponse ensurePlayerSnapshot(@RequestParam Long gameId, @RequestParam Long playerId) {
+        try {
+            return featureSnapshotQueryService.latestPlayerSnapshot(gameId, playerId);
+        } catch (ResourceNotFoundException ex) {
+            playerFeatureSnapshotService.generate(featureSnapshotQueryService.seasonForGame(gameId));
+            return featureSnapshotQueryService.latestPlayerSnapshot(gameId, playerId);
+        }
+    }
+
+    @PostMapping("/game-snapshots/ensure")
+    FeatureSnapshotResponse ensureGameSnapshot(@RequestParam Long gameId) {
+        try {
+            return featureSnapshotQueryService.latestGameSnapshot(gameId);
+        } catch (ResourceNotFoundException ex) {
+            teamFeatureSnapshotService.generateGame(featureSnapshotQueryService.seasonForGame(gameId));
+            return featureSnapshotQueryService.latestGameSnapshot(gameId);
+        }
     }
 
     @PostMapping("/player-snapshots/generate")

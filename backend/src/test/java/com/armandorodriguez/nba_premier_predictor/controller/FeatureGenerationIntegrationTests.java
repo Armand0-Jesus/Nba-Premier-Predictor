@@ -150,6 +150,46 @@ class FeatureGenerationIntegrationTests {
     }
 
     @Test
+    void ensurePlayerFeatureSnapshotGeneratesMissingSeasonSnapshot() throws Exception {
+        String responseJson = mockMvc.perform(post("/api/features/player-snapshots/ensure")
+                        .param("gameId", "22300003")
+                        .param("playerId", "201939"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshotType").value("player"))
+                .andExpect(jsonPath("$.gameId").value(22300003))
+                .andExpect(jsonPath("$.playerId").value(201939))
+                .andExpect(jsonPath("$.features.games_played_prior").value(2))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<>() {
+        });
+        assertThat(nestedMap(response, "features"))
+                .containsEntry("age_at_game", 35)
+                .doesNotContainKeys("points", "rebounds", "assists", "targets");
+    }
+
+    @Test
+    void ensureGameFeatureSnapshotGeneratesMissingSeasonSnapshot() throws Exception {
+        String responseJson = mockMvc.perform(post("/api/features/game-snapshots/ensure")
+                        .param("gameId", "22300003"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshotType").value("game"))
+                .andExpect(jsonPath("$.gameId").value(22300003))
+                .andExpect(jsonPath("$.features.home_team_id").value(1610612744))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Map<String, Object> response = objectMapper.readValue(responseJson, new TypeReference<>() {
+        });
+        assertThat(nestedMap(response, "features"))
+                .containsEntry("season_point_differential_delta", 15.0)
+                .doesNotContainKeys("homeScore", "awayScore", "targets");
+    }
+
+    @Test
     void generatesLeakageSafeTeamFeatureSnapshots() throws Exception {
         mockMvc.perform(post("/api/features/team-snapshots/generate").param("season", "2023"))
                 .andExpect(status().isOk())

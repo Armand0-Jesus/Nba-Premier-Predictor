@@ -1,5 +1,7 @@
 package com.armandorodriguez.nba_premier_predictor.controller;
 
+import java.util.List;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -11,7 +13,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.armandorodriguez.nba_premier_predictor.dto.TeamDashboardResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamGameLogResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.SeasonResponse;
 import com.armandorodriguez.nba_premier_predictor.service.TeamService;
 
 @Validated
@@ -41,5 +45,19 @@ public class TeamController {
     @GetMapping("/{teamId}/dashboard")
     TeamDashboardResponse dashboard(@PathVariable Long teamId, @RequestParam(required = false) Integer season) {
         return teamService.dashboard(teamId, season);
+    }
+
+    @GetMapping("/{teamId}/games")
+    Page<TeamGameLogResponse> games(
+            @PathVariable Long teamId,
+            @RequestParam(required = false) Integer season,
+            @RequestParam(required = false) String query,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return teamService.gameLogs(teamId, season, query, pageable);
+    }
+
+    @GetMapping("/{teamId}/seasons")
+    List<SeasonResponse> seasons(@PathVariable Long teamId) {
+        return teamService.seasons(teamId);
     }
 }

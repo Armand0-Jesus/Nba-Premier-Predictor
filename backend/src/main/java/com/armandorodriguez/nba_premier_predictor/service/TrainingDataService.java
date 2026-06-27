@@ -30,7 +30,8 @@ public class TrainingDataService {
     }
 
     public List<PlayerTrainingDataRow> playerStatRows(Integer seasonStartYear, int limit, int offset) {
-        return jdbcTemplate.query("""
+        String seasonFilter = seasonStartYear == null ? "" : "                  and g.season_start_year = ?\n";
+        String sql = """
                 select f.game_id, f.player_id, f.team_id, g.season_start_year, g.game_date_time_est,
                        f.data_cutoff_time, f.features, s.points, s.rebounds_total, s.assists,
                        s.steals, s.blocks, s.turnovers, s.num_minutes
@@ -40,30 +41,35 @@ public class TrainingDataService {
                  and s.player_id = f.player_id
                  and (s.team_id = f.team_id or s.team_id is null or f.team_id is null)
                 join games g on g.game_id = f.game_id
-                where (? is null or g.season_start_year = ?)
-                  and s.points is not null
+                where s.points is not null
                   and s.rebounds_total is not null
                   and s.assists is not null
-                order by g.game_date_time_est, f.game_id, f.player_id
+                %sorder by f.id
                 limit ?
                 offset ?
-                """, this::mapRow, seasonStartYear, seasonStartYear, limit, offset);
+                """.formatted(seasonFilter);
+        return seasonStartYear == null
+                ? jdbcTemplate.query(sql, this::mapRow, limit, offset)
+                : jdbcTemplate.query(sql, this::mapRow, seasonStartYear, limit, offset);
     }
 
     public List<TeamScoreTrainingDataRow> gameScoreRows(Integer seasonStartYear, int limit, int offset) {
-        return jdbcTemplate.query("""
+        String seasonFilter = seasonStartYear == null ? "" : "                  and g.season_start_year = ?\n";
+        String sql = """
                 select f.game_id, g.home_team_id, g.away_team_id, g.season_start_year,
                        g.game_date_time_est, f.data_cutoff_time, f.features,
                        g.home_score, g.away_score, g.winner_team_id
                 from game_feature_snapshots f
                 join games g on g.game_id = f.game_id
-                where (? is null or g.season_start_year = ?)
-                  and g.home_score is not null
+                where g.home_score is not null
                   and g.away_score is not null
-                order by g.game_date_time_est, f.game_id
+                %sorder by f.id
                 limit ?
                 offset ?
-                """, this::mapGameScoreRow, seasonStartYear, seasonStartYear, limit, offset);
+                """.formatted(seasonFilter);
+        return seasonStartYear == null
+                ? jdbcTemplate.query(sql, this::mapGameScoreRow, limit, offset)
+                : jdbcTemplate.query(sql, this::mapGameScoreRow, seasonStartYear, limit, offset);
     }
 
     private PlayerTrainingDataRow mapRow(ResultSet rs, int rowNum) throws SQLException {

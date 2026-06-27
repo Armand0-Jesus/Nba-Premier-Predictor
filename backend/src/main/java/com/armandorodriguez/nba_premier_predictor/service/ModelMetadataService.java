@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -28,6 +29,11 @@ public class ModelMetadataService {
     @Cacheable(cacheNames = "modelVersions", key = "'latest'")
     public Map<String, Object> versions() {
         return normalizeMap(mlPredictionClient.modelVersions());
+    }
+
+    @CacheEvict(cacheNames = "modelMetrics", key = "'latest'", beforeInvocation = true)
+    public Map<String, Object> evaluate() {
+        return normalizeMap(mlPredictionClient.evaluateModels());
     }
 
     public static String playerModelVersion(Map<String, Object> versions) {

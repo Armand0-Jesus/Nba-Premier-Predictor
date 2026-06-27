@@ -69,6 +69,13 @@ class HttpMlPredictionClient implements MlPredictionClient {
         return getMap("/model/versions");
     }
 
+    @Override
+    public Map<String, Object> evaluateModels() {
+        postMap("/evaluate/player-baseline");
+        postMap("/evaluate/game-score");
+        return modelMetrics();
+    }
+
     private PlayerPredictionResponse postPrediction(String path, PlayerPredictionRequest request) {
         try {
             HttpResponse<String> response = send("POST", path, predictionBody(request));
@@ -88,12 +95,22 @@ class HttpMlPredictionClient implements MlPredictionClient {
         }
     }
 
+    private Map<String, Object> postMap(String path) {
+        try {
+            HttpResponse<String> response = send("POST", path, "");
+            return objectMapper.readValue(response.body(), new TypeReference<>() {
+            });
+        } catch (JsonProcessingException ex) {
+            throw new MlServiceException("Could not parse ML service response", ex);
+        }
+    }
+
     private HttpResponse<String> send(String method, String path, String body) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(baseUrl + path))
                 .timeout(Duration.ofSeconds(30));
         if ("POST".equals(method)) {
             builder.header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body));
+                    .POST(HttpRequest.BodyPublishers.ofString(body == null ? "" : body));
         } else {
             builder.GET();
         }

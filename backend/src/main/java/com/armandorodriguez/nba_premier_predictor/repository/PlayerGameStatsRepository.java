@@ -20,6 +20,12 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
             join s.game g
             where s.playerId = :playerId
               and (:season is null or g.seasonStartYear = :season)
+              and (:query is null or lower(concat(
+                    coalesce(g.homeTeamCity, ''), ' ', coalesce(g.homeTeamName, ''), ' ',
+                    coalesce(g.awayTeamCity, ''), ' ', coalesce(g.awayTeamName, ''), ' ',
+                    coalesce(g.gameLabel, ''), ' ', coalesce(g.gameSubLabel, ''), ' ',
+                    cast(g.id as string), ' ', cast(g.gameDate as string)
+                  )) like :query)
             order by g.gameDateTimeEst desc
             """, countQuery = """
             select count(s)
@@ -27,10 +33,17 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
             join s.game g
             where s.playerId = :playerId
               and (:season is null or g.seasonStartYear = :season)
+              and (:query is null or lower(concat(
+                    coalesce(g.homeTeamCity, ''), ' ', coalesce(g.homeTeamName, ''), ' ',
+                    coalesce(g.awayTeamCity, ''), ' ', coalesce(g.awayTeamName, ''), ' ',
+                    coalesce(g.gameLabel, ''), ' ', coalesce(g.gameSubLabel, ''), ' ',
+                    cast(g.id as string), ' ', cast(g.gameDate as string)
+                  )) like :query)
             """)
     Page<PlayerGameStats> findGameLogs(
             @Param("playerId") Long playerId,
             @Param("season") Integer season,
+            @Param("query") String query,
             Pageable pageable);
 
     @EntityGraph(attributePaths = {"game", "team"})
@@ -43,4 +56,14 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
             order by g.gameDateTimeEst desc
             """)
     List<PlayerGameStats> findForAverages(@Param("playerId") Long playerId, @Param("season") Integer season);
+
+    @EntityGraph(attributePaths = {"game", "team", "player"})
+    @Query("""
+            select s
+            from PlayerGameStats s
+            join s.game g
+            where s.gameId = :gameId
+            order by s.home desc, s.teamId, s.startingPosition, s.numMinutes desc nulls last, s.playerId
+            """)
+    List<PlayerGameStats> findForGame(@Param("gameId") Long gameId);
 }

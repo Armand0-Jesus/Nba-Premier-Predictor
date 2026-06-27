@@ -24,6 +24,7 @@ import com.armandorodriguez.nba_premier_predictor.dto.PlayerDashboardResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerDetailResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerGameLogResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerSummaryResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.SeasonResponse;
 import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundException;
 import com.armandorodriguez.nba_premier_predictor.repository.PlayerGameStatsRepository;
 import com.armandorodriguez.nba_premier_predictor.repository.PlayerRepository;
@@ -39,6 +40,7 @@ public class PlayerService {
 
     private final PlayerRepository playerRepository;
     private final PlayerGameStatsRepository statsRepository;
+    private final SeasonService seasonService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final boolean searchCacheEnabled;
@@ -47,12 +49,14 @@ public class PlayerService {
     public PlayerService(
             PlayerRepository playerRepository,
             PlayerGameStatsRepository statsRepository,
+            SeasonService seasonService,
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
             @Value("${app.search-cache.enabled:true}") boolean searchCacheEnabled,
             @Value("${app.search-cache.ttl:5m}") java.time.Duration searchCacheTtl) {
         this.playerRepository = playerRepository;
         this.statsRepository = statsRepository;
+        this.seasonService = seasonService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.searchCacheEnabled = searchCacheEnabled;
@@ -82,9 +86,14 @@ public class PlayerService {
         return PlayerDetailResponse.from(findPlayer(playerId));
     }
 
-    public Page<PlayerGameLogResponse> gameLogs(Long playerId, Integer season, Pageable pageable) {
+    public Page<PlayerGameLogResponse> gameLogs(Long playerId, Integer season, String query, Pageable pageable) {
         findPlayer(playerId);
-        return statsRepository.findGameLogs(playerId, season, pageable).map(PlayerGameLogResponse::from);
+        return statsRepository.findGameLogs(playerId, season, searchPattern(query), pageable).map(PlayerGameLogResponse::from);
+    }
+
+    public List<SeasonResponse> seasons(Long playerId) {
+        findPlayer(playerId);
+        return seasonService.playerSeasons(playerId);
     }
 
     @Cacheable(cacheNames = "playerAverages", key = "#playerId + ':' + (#season == null ? 'all' : #season)")
@@ -98,7 +107,7 @@ public class PlayerService {
         Player player = findPlayer(playerId);
         PlayerAveragesResponse averages = PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));
         List<PlayerGameLogResponse> recentGames = statsRepository
-                .findGameLogs(playerId, season, PageRequest.of(0, 10))
+                .findGameLogs(playerId, season, null, PageRequest.of(0, 10))
                 .map(PlayerGameLogResponse::from)
                 .toList();
         return new PlayerDashboardResponse(PlayerDetailResponse.from(player), averages, recentGames);
@@ -111,6 +120,11 @@ public class PlayerService {
 
     private static String clean(String query) {
         return query == null || query.isBlank() ? null : query.trim();
+    }
+
+    private static String searchPattern(String query) {
+        String cleaned = clean(query);
+        return cleaned == null ? null : "%" + cleaned.toLowerCase() + "%";
     }
 
     private static int currentSeasonStartYear() {

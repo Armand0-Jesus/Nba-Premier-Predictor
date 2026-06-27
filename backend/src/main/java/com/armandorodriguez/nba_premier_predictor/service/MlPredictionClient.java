@@ -18,4 +18,6 @@ public interface MlPredictionClient {
     Map<String, Object> modelMetrics();
 
     Map<String, Object> modelVersions();
+
+    Map<String, Object> evaluateModels();
 }
