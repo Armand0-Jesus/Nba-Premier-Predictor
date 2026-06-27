@@ -61,10 +61,13 @@ class GameScoreBaselineModelTests(unittest.TestCase):
         self.assertEqual(1, evaluation["test_rows"])
         self.assertIn("home_team_score", evaluation["metrics"])
         self.assertIn("away_team_score", evaluation["metrics"])
+        self.assertEqual(10.0, evaluation["metrics"]["home_team_score"]["hit_threshold"])
+        self.assertIn("hit_rate", evaluation["metrics"]["home_team_score"])
         self.assertEqual("time_grouped_by_game_datetime", evaluation["split_strategy"])
         self.assertIn("feature_average", evaluation["baseline_metrics"])
         self.assertIn("training_mean", evaluation["baseline_metrics"])
         self.assertIn("home_team_score", evaluation["baseline_metrics"]["feature_average"])
+        self.assertEqual(10.0, evaluation["baseline_metrics"]["feature_average"]["away_team_score"]["hit_threshold"])
 
     def test_evaluate_time_split_keeps_same_timestamp_on_one_side(self):
         evaluation = GameScoreBaselineModel.evaluate_time_split([

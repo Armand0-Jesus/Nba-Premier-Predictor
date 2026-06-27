@@ -95,10 +95,13 @@ class PlayerBaselineModelTests(unittest.TestCase):
         self.assertIn("projected_points", evaluation["metrics"])
         self.assertIn("mae", evaluation["metrics"]["fantasy_points"])
         self.assertIn("rmse", evaluation["metrics"]["fantasy_points"])
+        self.assertEqual(8.0, evaluation["metrics"]["fantasy_points"]["hit_threshold"])
+        self.assertIn("hit_rate", evaluation["metrics"]["fantasy_points"])
         self.assertEqual("time_grouped_by_game_datetime", evaluation["split_strategy"])
         self.assertIn("feature_average", evaluation["baseline_metrics"])
         self.assertIn("training_mean", evaluation["baseline_metrics"])
         self.assertIn("fantasy_points", evaluation["baseline_metrics"]["feature_average"])
+        self.assertEqual(5.0, evaluation["baseline_metrics"]["feature_average"]["projected_points"]["hit_threshold"])
 
     def test_evaluate_time_split_keeps_same_timestamp_on_one_side(self):
         rows = [

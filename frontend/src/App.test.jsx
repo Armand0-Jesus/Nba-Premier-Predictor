@@ -67,7 +67,7 @@ describe('NBA Premier Predictor frontend', () => {
     await user.type(screen.getByLabelText(/Search by player name/i), 'Michael');
 
     expect(await screen.findByText('Michael Jordan')).toBeInTheDocument();
-    expect(screen.getByText('2002')).toBeInTheDocument();
+    expect(screen.getByText('2002-2003')).toBeInTheDocument();
     expect(screen.queryByText('Present')).not.toBeInTheDocument();
   });
 
@@ -90,13 +90,13 @@ describe('NBA Premier Predictor frontend', () => {
 
     await user.type(screen.getByLabelText(/Player/i), 'Steph');
     await user.click(await screen.findByRole('button', { name: /Stephen Curry/i }));
-    await user.click(await screen.findByRole('button', { name: /home game/i }));
+    await user.click(await screen.findByRole('button', { name: /Los Angeles Lakers/i }));
     await user.click(screen.getByRole('button', { name: /Predict Player Line/i }));
 
     expect(await screen.findByText('Expected Stat Line')).toBeInTheDocument();
-    expect(screen.getByText('28.4')).toBeInTheDocument();
+    expect(screen.getByText('28')).toBeInTheDocument();
     expect(screen.getByText('74%')).toBeInTheDocument();
-    expect(window.fetch.mock.calls.some(([url]) => String(url).includes('activeOnly=true'))).toBe(true);
+    expect(window.fetch.mock.calls.some(([url]) => String(url).includes('/api/features/player-snapshots/ensure'))).toBe(true);
     expect(window.fetch).toHaveBeenCalledWith('/api/predictions/player', expect.objectContaining({ method: 'POST' }));
   });
 
@@ -185,6 +185,39 @@ function defaultFetch(path, options = {}) {
     ]));
   }
 
+  if (path === '/api/seasons') {
+    return jsonResponse([
+      {
+        seasonStartYear: 2023,
+        label: '2023-2024',
+        gameCount: 1,
+        mostRecentGameDate: '2024-01-15',
+      },
+    ]);
+  }
+
+  if (path === '/api/players/201939/seasons') {
+    return jsonResponse([
+      {
+        seasonStartYear: 2023,
+        label: '2023-2024',
+        gameCount: 1,
+        mostRecentGameDate: '2024-01-15',
+      },
+    ]);
+  }
+
+  if (path === '/api/teams/1610612744/seasons') {
+    return jsonResponse([
+      {
+        seasonStartYear: 2023,
+        label: '2023-2024',
+        gameCount: 1,
+        mostRecentGameDate: '2024-01-15',
+      },
+    ]);
+  }
+
   if (path.startsWith('/api/players/201939/games')) {
     return jsonResponse(page([
       {
@@ -193,6 +226,9 @@ function defaultFetch(path, options = {}) {
         teamId: 1610612744,
         teamName: 'Golden State Warriors',
         opponentTeamId: 1610612747,
+        opponentTeamName: 'Los Angeles Lakers',
+        teamScore: 120,
+        opponentScore: 115,
         home: true,
         win: true,
         minutes: 35.5,
@@ -203,7 +239,7 @@ function defaultFetch(path, options = {}) {
     ]));
   }
 
-  if (path.startsWith('/api/features/player-snapshots/latest')) {
+  if (path.startsWith('/api/features/player-snapshots/ensure')) {
     return jsonResponse({
       snapshotId: 42,
       snapshotType: 'player',
@@ -260,7 +296,56 @@ function defaultFetch(path, options = {}) {
     ]));
   }
 
-  if (path.startsWith('/api/features/game-snapshots/latest')) {
+  if (path === '/api/games/12300001') {
+    return jsonResponse({
+      id: 12300001,
+      seasonStartYear: 2023,
+      gameDateTimeEst: '2024-01-15T22:00:00',
+      gameDate: '2024-01-15',
+      homeTeamId: 1610612744,
+      homeTeamName: 'Golden State Warriors',
+      awayTeamId: 1610612747,
+      awayTeamName: 'Los Angeles Lakers',
+      homeScore: 120,
+      awayScore: 115,
+    });
+  }
+
+  if (path === '/api/games/12300001/box-score') {
+    return jsonResponse({
+      game: {
+        id: 12300001,
+        seasonStartYear: 2023,
+        gameDateTimeEst: '2024-01-15T22:00:00',
+        homeTeamName: 'Golden State Warriors',
+        awayTeamName: 'Los Angeles Lakers',
+        homeScore: 120,
+        awayScore: 115,
+      },
+      homeTeam: {
+        teamName: 'Golden State Warriors',
+        teamScore: 120,
+        rebounds: 44,
+        assists: 29,
+        steals: 8,
+        blocks: 6,
+        turnovers: 12,
+      },
+      awayTeam: {
+        teamName: 'Los Angeles Lakers',
+        teamScore: 115,
+        rebounds: 42,
+        assists: 25,
+        steals: 7,
+        blocks: 4,
+        turnovers: 13,
+      },
+      homePlayers: [{ playerName: 'Stephen Curry', minutes: 35.5, points: 32, rebounds: 5, assists: 7 }],
+      awayPlayers: [{ playerName: 'LeBron James', minutes: 36, points: 28, rebounds: 8, assists: 9 }],
+    });
+  }
+
+  if (path.startsWith('/api/features/game-snapshots/ensure')) {
     return jsonResponse({
       snapshotId: 77,
       snapshotType: 'game',
@@ -322,6 +407,7 @@ function defaultFetch(path, options = {}) {
       playerBaseline: {
         metrics: {
           projected_points: { mae: 4.59, rmse: 6.1 },
+          fantasy_points: { mae: 7.85, rmse: 9.2, hit_rate: 0.68, hit_threshold: 8 },
         },
         baseline_metrics: {
           feature_average: {
@@ -334,6 +420,22 @@ function defaultFetch(path, options = {}) {
       gameScoreBaseline: {
         metrics: {
           home_team_score: { mae: 9.52, rmse: 12.4 },
+          away_team_score: { mae: 10.06, rmse: 13.1, hit_rate: 0.61, hit_threshold: 10 },
+        },
+      },
+    });
+  }
+
+  if (path === '/api/model/evaluate' && options.method === 'POST') {
+    return jsonResponse({
+      playerBaseline: {
+        metrics: {
+          projected_points: { mae: 4.59, rmse: 6.1, hit_rate: 0.72, hit_threshold: 5 },
+        },
+      },
+      gameScoreBaseline: {
+        metrics: {
+          home_team_score: { mae: 9.52, rmse: 12.4, hit_rate: 0.64, hit_threshold: 10 },
         },
       },
     });

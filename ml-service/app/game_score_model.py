@@ -18,6 +18,11 @@ TARGETS = (
     ("away_team_score", "awayScore"),
 )
 
+HIT_THRESHOLDS = {
+    "home_team_score": 10,
+    "away_team_score": 10,
+}
+
 
 @dataclass
 class GameScoreBaselineModel:
@@ -73,12 +78,12 @@ class GameScoreBaselineModel:
             "validation_data_start": example_time(test_examples[0]),
             "validation_data_end": example_time(test_examples[-1]),
             "metrics": {
-                output_name: regression_metrics(values)
+                output_name: regression_metrics(values, HIT_THRESHOLDS.get(output_name))
                 for output_name, values in values_by_target.items()
             },
             "baseline_metrics": {
                 baseline_name: {
-                    output_name: regression_metrics(values)
+                    output_name: regression_metrics(values, HIT_THRESHOLDS.get(output_name))
                     for output_name, values in target_values.items()
                 }
                 for baseline_name, target_values in baseline_values.items()

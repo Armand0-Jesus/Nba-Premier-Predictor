@@ -66,15 +66,50 @@ class MainEndpointTests(unittest.TestCase):
             training_row(20, 6, 5, 32, 36.7, "2023-10-03T19:00:00"),
             training_row(24, 8, 7, 34, 44.1, "2023-10-04T19:00:00"),
         ]
+        artifact_dir = Path("unit-test-artifacts")
+        shutil.rmtree(artifact_dir, ignore_errors=True)
+        metrics_path = artifact_dir / "player_metrics.json"
 
-        with patch.object(main, "fetch_player_training_rows", return_value=rows):
-            response = main.evaluate_player_baseline(season=2023, limit=4, train_ratio=0.75)
+        try:
+            with patch.object(main, "PLAYER_METRICS_PATH", metrics_path):
+                with patch.object(main, "fetch_player_training_rows", return_value=rows):
+                    response = main.evaluate_player_baseline(season=2023, limit=4, train_ratio=0.75)
 
-        self.assertEqual(3, response.train_rows)
-        self.assertEqual(1, response.test_rows)
-        self.assertIn("fantasy_points", response.metrics)
-        self.assertIn("feature_average", response.baseline_metrics)
-        self.assertEqual(response.metrics, main.model_metrics()["playerBaseline"]["metrics"])
+            self.assertEqual(3, response.train_rows)
+            self.assertEqual(1, response.test_rows)
+            self.assertIn("fantasy_points", response.metrics)
+            self.assertIn("hit_rate", response.metrics["fantasy_points"])
+            self.assertIn("feature_average", response.baseline_metrics)
+            self.assertEqual(response.metrics, main.model_metrics()["playerBaseline"]["metrics"])
+            self.assertTrue(metrics_path.exists())
+            self.assertEqual(response.metrics, main.load_json(metrics_path)["metrics"])
+        finally:
+            shutil.rmtree(artifact_dir, ignore_errors=True)
+
+    def test_evaluate_game_score_stores_latest_metrics(self):
+        rows = [
+            game_score_training_row(100, 90, "2024-01-01T22:00:00"),
+            game_score_training_row(110, 105, "2024-01-03T22:00:00"),
+            game_score_training_row(130, 120, "2024-01-05T22:00:00"),
+        ]
+        artifact_dir = Path("unit-test-artifacts")
+        shutil.rmtree(artifact_dir, ignore_errors=True)
+        metrics_path = artifact_dir / "game_score_metrics.json"
+
+        try:
+            with patch.object(main, "GAME_SCORE_METRICS_PATH", metrics_path):
+                with patch.object(main, "fetch_game_score_training_rows", return_value=rows):
+                    response = main.evaluate_game_score_baseline(season=2023, limit=3, train_ratio=0.67)
+
+            self.assertEqual(2, response.train_rows)
+            self.assertEqual(1, response.test_rows)
+            self.assertIn("home_team_score", response.metrics)
+            self.assertIn("hit_rate", response.metrics["home_team_score"])
+            self.assertEqual(response.metrics, main.model_metrics()["gameScoreBaseline"]["metrics"])
+            self.assertTrue(metrics_path.exists())
+            self.assertEqual(response.metrics, main.load_json(metrics_path)["metrics"])
+        finally:
+            shutil.rmtree(artifact_dir, ignore_errors=True)
 
     def test_train_player_baseline_updates_loaded_model(self):
         rows = [

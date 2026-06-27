@@ -20,14 +20,37 @@ DEFAULT_ARTIFACT_PATH = Path(__file__).resolve().parents[1] / "artifacts" / "pla
 MODEL_ARTIFACT_PATH = Path(os.getenv("MODEL_ARTIFACT_PATH", str(DEFAULT_ARTIFACT_PATH)))
 DEFAULT_GAME_SCORE_ARTIFACT_PATH = Path(__file__).resolve().parents[1] / "artifacts" / "game_score_baseline.joblib"
 GAME_SCORE_ARTIFACT_PATH = Path(os.getenv("GAME_SCORE_ARTIFACT_PATH", str(DEFAULT_GAME_SCORE_ARTIFACT_PATH)))
+PLAYER_METRICS_PATH = Path(os.getenv(
+    "PLAYER_METRICS_PATH",
+    str(MODEL_ARTIFACT_PATH.with_name("player_metrics.json")),
+))
+GAME_SCORE_METRICS_PATH = Path(os.getenv(
+    "GAME_SCORE_METRICS_PATH",
+    str(GAME_SCORE_ARTIFACT_PATH.with_name("game_score_metrics.json")),
+))
 BACKEND_PAGE_SIZE = 10000
 MAX_TRAINING_ROWS = 50000
 
+
+def load_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    return data if isinstance(data, dict) else None
+
+
+def save_json(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2, sort_keys=True)
+
+
 app = FastAPI(title="NBA Premier Predictor ML Service", version="0.1.0")
 app.state.player_model = PlayerBaselineModel.load(MODEL_ARTIFACT_PATH)
-app.state.player_metrics = None
+app.state.player_metrics = load_json(PLAYER_METRICS_PATH)
 app.state.game_score_model = GameScoreBaselineModel.load(GAME_SCORE_ARTIFACT_PATH)
-app.state.game_score_metrics = None
+app.state.game_score_metrics = load_json(GAME_SCORE_METRICS_PATH)
 
 
 class PlayerPredictionRequest(BaseModel):
@@ -167,6 +190,7 @@ def evaluate_player_baseline(
         raise HTTPException(status_code=400, detail=str(ex)) from ex
 
     app.state.player_metrics = metrics
+    save_json(PLAYER_METRICS_PATH, metrics)
     return EvaluationResponse(**metrics)
 
 
@@ -182,6 +206,7 @@ def evaluate_game_score_baseline(
         raise HTTPException(status_code=400, detail=str(ex)) from ex
 
     app.state.game_score_metrics = metrics
+    save_json(GAME_SCORE_METRICS_PATH, metrics)
     return EvaluationResponse(**metrics)
 
 
@@ -340,3 +365,4 @@ def model_health(model: PlayerBaselineModel | GameScoreBaselineModel) -> dict[st
         "modelVersion": model.model_version,
         "trainedRows": model.trained_rows,
     }
+

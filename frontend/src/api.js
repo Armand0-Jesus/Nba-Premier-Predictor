@@ -3,11 +3,14 @@ export async function apiGet(path) {
 }
 
 export async function apiPost(path, body) {
-  return apiRequest(path, {
+  const options = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  };
+  if (body !== undefined) {
+    options.body = JSON.stringify(body);
+  }
+  return apiRequest(path, options);
 }
 
 async function apiRequest(path, options = {}) {

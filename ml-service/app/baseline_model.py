@@ -20,6 +20,14 @@ TARGETS = (
     ("fantasy_points", "fantasyPoints"),
 )
 
+HIT_THRESHOLDS = {
+    "projected_points": 5,
+    "projected_rebounds": 2,
+    "projected_assists": 2,
+    "projected_minutes": 5,
+    "fantasy_points": 8,
+}
+
 
 @dataclass
 class PlayerBaselineModel:
@@ -75,12 +83,12 @@ class PlayerBaselineModel:
             "validation_data_start": example_time(test_examples[0]),
             "validation_data_end": example_time(test_examples[-1]),
             "metrics": {
-                output_name: regression_metrics(values)
+                output_name: regression_metrics(values, HIT_THRESHOLDS.get(output_name))
                 for output_name, values in values_by_target.items()
             },
             "baseline_metrics": {
                 baseline_name: {
-                    output_name: regression_metrics(values)
+                    output_name: regression_metrics(values, HIT_THRESHOLDS.get(output_name))
                     for output_name, values in target_values.items()
                 }
                 for baseline_name, target_values in baseline_values.items()
@@ -226,16 +234,23 @@ def split_group_key(example: dict[str, Any]) -> str:
     return str(row.get("gameDateTime") or row.get("gameId") or "")
 
 
-def regression_metrics(values: list[tuple[float, float]]) -> dict[str, float]:
+def regression_metrics(values: list[tuple[float, float]], hit_threshold: float | None = None) -> dict[str, float]:
     errors = [predicted - actual for predicted, actual in values]
     predictions = [predicted for predicted, _ in values]
     actuals = [actual for _, actual in values]
-    return {
+    metrics = {
         "mae": round(sum(abs(error) for error in errors) / len(errors), 4),
         "rmse": round(math.sqrt(sum(error * error for error in errors) / len(errors)), 4),
         "mean_prediction": round(sum(predictions) / len(predictions), 4),
         "mean_actual": round(sum(actuals) / len(actuals), 4),
     }
+    if hit_threshold is not None:
+        metrics["hit_threshold"] = float(hit_threshold)
+        metrics["hit_rate"] = round(
+            sum(1 for error in errors if abs(error) <= hit_threshold) / len(errors),
+            4,
+        )
+    return metrics
 
 
 def number(value: Any) -> float | None:

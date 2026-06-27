@@ -666,6 +666,12 @@ tr:last-child td {
   color: var(--orange-strong);
 }
 
+.action-stack {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .metric-list {
   display: grid;
   gap: 10px;
