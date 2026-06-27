@@ -23,9 +23,17 @@ insert into games (
     home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score,
     winner_team_id, game_type, game_label, arena_name, arena_city, arena_state
 ) values (
+    12300000, 2023, '2023-10-10 22:00:00', '2023-10-10', 1610612744, 1610612747,
+    'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 98, 101,
+    1610612747, 'Preseason', 'Preseason', 'Chase Center', 'San Francisco', 'CA'
+), (
     12300001, 2023, '2024-01-15 22:00:00', '2024-01-15', 1610612744, 1610612747,
     'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 120, 115,
     1610612744, 'Regular Season', 'Regular Season', 'Chase Center', 'San Francisco', 'CA'
+), (
+    12300002, 2023, '2023-12-01 22:00:00', '2023-12-01', 1610612744, 1610612747,
+    'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 112, 108,
+    1610612744, 'NBA Emirates Cup', 'NBA Cup', 'Chase Center', 'San Francisco', 'CA'
 );
 
 insert into player_game_stats (
@@ -36,16 +44,32 @@ insert into player_game_stats (
     free_throws_percentage, rebounds_defensive, rebounds_offensive, rebounds_total,
     fouls_personal, turnovers, plus_minus_points, starting_position
 ) values
+    (12300000, 201939, 1610612744, 1610612747, false, true, 19.00,
+     12, 3, 0, 1, 10, 4, 0.400, 5, 2, 0.400, 2, 2, 1.000,
+     2, 0, 2, 1, 2, -4, 'G'),
+    (12300000, 2544, 1610612747, 1610612744, true, false, 21.00,
+     16, 4, 1, 1, 12, 6, 0.500, 3, 1, 0.333, 4, 3, 0.750,
+     4, 1, 5, 1, 2, 6, 'F'),
     (12300001, 201939, 1610612744, 1610612747, true, true, 35.50,
      32, 7, 1, 2, 22, 11, 0.500, 12, 6, 0.500, 4, 4, 1.000,
      4, 1, 5, 2, 3, 8, 'G'),
     (12300001, 2544, 1610612747, 1610612744, false, false, 36.00,
      28, 9, 0, 1, 20, 10, 0.500, 6, 2, 0.333, 7, 6, 0.857,
-     6, 2, 8, 1, 4, -5, 'F');
+     6, 2, 8, 1, 4, -5, 'F'),
+    (12300002, 201939, 1610612744, 1610612747, true, true, 33.00,
+     24, 8, 0, 2, 19, 9, 0.474, 9, 4, 0.444, 2, 2, 1.000,
+     3, 1, 4, 2, 2, 7, 'G'),
+    (12300002, 2544, 1610612747, 1610612744, false, false, 34.00,
+     25, 6, 1, 1, 18, 8, 0.444, 5, 1, 0.200, 9, 8, 0.889,
+     6, 2, 8, 1, 3, -7, 'F');
 
 insert into team_game_stats (
     game_id, team_id, opponent_team_id, home, win, team_score, opponent_score,
     assists, blocks, steals, rebounds_total, turnovers, num_minutes
 ) values
+    (12300000, 1610612744, 1610612747, true, false, 98, 101, 21, 4, 6, 37, 16, 240.00),
+    (12300000, 1610612747, 1610612744, false, true, 101, 98, 24, 5, 7, 39, 14, 240.00),
     (12300001, 1610612744, 1610612747, true, true, 120, 115, 29, 6, 8, 44, 12, 240.00),
-    (12300001, 1610612747, 1610612744, false, false, 115, 120, 25, 4, 7, 42, 13, 240.00);
+    (12300001, 1610612747, 1610612744, false, false, 115, 120, 25, 4, 7, 42, 13, 240.00),
+    (12300002, 1610612744, 1610612747, true, true, 112, 108, 27, 5, 8, 40, 11, 240.00),
+    (12300002, 1610612747, 1610612744, false, false, 108, 112, 23, 5, 6, 41, 12, 240.00);

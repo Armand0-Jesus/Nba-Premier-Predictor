@@ -20,6 +20,7 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
             join s.game g
             where s.playerId = :playerId
               and (:season is null or g.seasonStartYear = :season)
+              and lower(coalesce(g.gameType, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
               and (:query is null or lower(concat(
                     coalesce(g.homeTeamCity, ''), ' ', coalesce(g.homeTeamName, ''), ' ',
                     coalesce(g.awayTeamCity, ''), ' ', coalesce(g.awayTeamName, ''), ' ',
@@ -33,6 +34,7 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
             join s.game g
             where s.playerId = :playerId
               and (:season is null or g.seasonStartYear = :season)
+              and lower(coalesce(g.gameType, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
               and (:query is null or lower(concat(
                     coalesce(g.homeTeamCity, ''), ' ', coalesce(g.homeTeamName, ''), ' ',
                     coalesce(g.awayTeamCity, ''), ' ', coalesce(g.awayTeamName, ''), ' ',
@@ -53,6 +55,7 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
             join s.game g
             where s.playerId = :playerId
               and (:season is null or g.seasonStartYear = :season)
+              and lower(coalesce(g.gameType, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
             order by g.gameDateTimeEst desc
             """)
     List<PlayerGameStats> findForAverages(@Param("playerId") Long playerId, @Param("season") Integer season);

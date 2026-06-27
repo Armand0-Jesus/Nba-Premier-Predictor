@@ -96,13 +96,13 @@ public class PlayerService {
         return seasonService.playerSeasons(playerId);
     }
 
-    @Cacheable(cacheNames = "playerAverages", key = "#playerId + ':' + (#season == null ? 'all' : #season)")
+    @Cacheable(cacheNames = "playerAverages", key = "'v3:' + #playerId + ':' + (#season == null ? 'all' : #season)")
     public PlayerAveragesResponse averages(Long playerId, Integer season) {
         findPlayer(playerId);
         return PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));
     }
 
-    @Cacheable(cacheNames = "playerDashboards", key = "#playerId + ':' + (#season == null ? 'all' : #season)")
+    @Cacheable(cacheNames = "playerDashboards", key = "'v3:' + #playerId + ':' + (#season == null ? 'all' : #season)")
     public PlayerDashboardResponse dashboard(Long playerId, Integer season) {
         Player player = findPlayer(playerId);
         PlayerAveragesResponse averages = PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));

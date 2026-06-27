@@ -14,7 +14,19 @@ export async function apiPost(path, body) {
 }
 
 async function apiRequest(path, options = {}) {
-  const response = await fetch(path, options);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 20000);
+  let response;
+  try {
+    response = await fetch(path, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('That took too long. Try another game or refresh.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
 
@@ -31,14 +43,14 @@ export function pageItems(payload) {
 
 export function compactNumber(value, digits = 1) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return 'Unknown';
+    return 'Not listed';
   }
   return Number(value).toFixed(digits).replace(/\.0$/, '');
 }
 
 export function percent(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return 'Unknown';
+    return 'Not listed';
   }
   return `${Math.round(Number(value) * 100)}%`;
 }

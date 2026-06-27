@@ -20,6 +20,7 @@ public interface TeamGameStatsRepository extends JpaRepository<TeamGameStats, Lo
             join s.game g
             where s.teamId = :teamId
               and (:season is null or g.seasonStartYear = :season)
+              and lower(coalesce(g.gameType, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
               and (:query is null or lower(concat(
                     coalesce(g.homeTeamCity, ''), ' ', coalesce(g.homeTeamName, ''), ' ',
                     coalesce(g.awayTeamCity, ''), ' ', coalesce(g.awayTeamName, ''), ' ',
@@ -33,6 +34,7 @@ public interface TeamGameStatsRepository extends JpaRepository<TeamGameStats, Lo
             join s.game g
             where s.teamId = :teamId
               and (:season is null or g.seasonStartYear = :season)
+              and lower(coalesce(g.gameType, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
               and (:query is null or lower(concat(
                     coalesce(g.homeTeamCity, ''), ' ', coalesce(g.homeTeamName, ''), ' ',
                     coalesce(g.awayTeamCity, ''), ' ', coalesce(g.awayTeamName, ''), ' ',
@@ -54,4 +56,5 @@ public interface TeamGameStatsRepository extends JpaRepository<TeamGameStats, Lo
             order by s.home desc
             """)
     List<TeamGameStats> findForGame(@Param("gameId") Long gameId);
+
 }

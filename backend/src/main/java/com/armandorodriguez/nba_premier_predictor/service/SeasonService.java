@@ -26,6 +26,7 @@ public class SeasonService {
                 select g.season_start_year, count(*) as game_count, max(g.game_date) as most_recent_game_date
                 from games g
                 where g.season_start_year is not null
+                  and lower(coalesce(g.game_type, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
                 group by g.season_start_year
                 order by g.season_start_year desc
                 """, this::mapSeason);
@@ -37,6 +38,7 @@ public class SeasonService {
                 from player_game_stats s
                 join games g on g.game_id = s.game_id
                 where s.player_id = ? and g.season_start_year is not null
+                  and lower(coalesce(g.game_type, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
                 group by g.season_start_year
                 order by g.season_start_year desc
                 """, this::mapSeason, playerId);
@@ -48,6 +50,7 @@ public class SeasonService {
                 from team_game_stats s
                 join games g on g.game_id = s.game_id
                 where s.team_id = ? and g.season_start_year is not null
+                  and lower(coalesce(g.game_type, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
                 group by g.season_start_year
                 order by g.season_start_year desc
                 """, this::mapSeason, teamId);

@@ -18,6 +18,7 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             where (:season is null or g.seasonStartYear = :season)
               and (:teamId is null or g.homeTeamId = :teamId or g.awayTeamId = :teamId)
               and (:gameType is null or lower(g.gameType) = :gameType)
+              and (:gameType is not null or lower(coalesce(g.gameType, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament'))
               and (:query is null or lower(concat(
                     coalesce(g.homeTeamCity, ''), ' ', coalesce(g.homeTeamName, ''), ' ',
                     coalesce(g.awayTeamCity, ''), ' ', coalesce(g.awayTeamName, ''), ' ',
@@ -33,4 +34,19 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             @Param("gameType") String gameType,
             @Param("query") String query,
             Pageable pageable);
+
+    @Query("""
+            select count(g)
+            from Game g
+            where (:season is null or g.seasonStartYear = :season)
+              and lower(coalesce(g.gameType, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+              and (g.homeTeamId = :teamId or g.awayTeamId = :teamId)
+              and g.winnerTeamId is not null
+              and ((:win = true and g.winnerTeamId = :teamId)
+                or (:win = false and g.winnerTeamId <> :teamId))
+            """)
+    long countRegularSeasonResults(
+            @Param("teamId") Long teamId,
+            @Param("season") Integer season,
+            @Param("win") boolean win);
 }

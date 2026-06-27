@@ -224,32 +224,48 @@ button:disabled {
   object-fit: contain;
 }
 
-.score-strip {
+.legend-collage {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.72fr) minmax(260px, 1.2fr) minmax(190px, 0.8fr);
+  align-items: end;
+  gap: 14px;
+  padding: 0 clamp(24px, 7vw, 92px) 62px;
+}
+
+.legend-card {
+  position: relative;
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #11141a;
+  box-shadow: var(--shadow);
+}
+
+.legend-card::after {
+  content: "";
   position: absolute;
-  right: -18px;
-  bottom: 28px;
-  display: grid;
-  gap: 3px;
-  padding: 10px 12px;
-  background: var(--charcoal);
-  border: 1px solid var(--line-strong);
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 50%, rgba(5, 6, 8, 0.48)),
+    linear-gradient(90deg, rgba(247, 127, 0, 0.12), transparent 42%);
+  pointer-events: none;
 }
 
-.score-strip span {
-  color: var(--muted);
-  font-size: 0.72rem;
+.legend-card img {
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+  display: block;
+  object-fit: cover;
+  filter: saturate(0.96) contrast(1.04);
 }
 
-.score-strip strong {
-  color: var(--orange);
-  font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+.legend-card-tall {
+  min-height: 420px;
 }
 
-.landing-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  padding: 0 clamp(24px, 7vw, 92px) 52px;
+.legend-card-wide {
+  min-height: 340px;
 }
 
 .metric-tile {
@@ -644,6 +660,8 @@ td {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   text-align: left;
   vertical-align: middle;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 th {
@@ -888,7 +906,7 @@ tr:last-child td {
     grid-row: auto;
   }
 
-  .landing-grid {
+  .legend-collage {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -916,7 +934,7 @@ tr:last-child td {
   .result-grid,
   .scoreboard,
   .snapshot-summary,
-  .landing-grid {
+  .legend-collage {
     grid-template-columns: 1fr;
   }
 
@@ -927,6 +945,16 @@ tr:last-child td {
 
   .landing-hero::before {
     inset: 12px;
+  }
+
+  .legend-collage {
+    padding: 0 18px 40px;
+  }
+
+  .legend-card,
+  .legend-card-tall,
+  .legend-card-wide {
+    min-height: 240px;
   }
 
   .metric-row {

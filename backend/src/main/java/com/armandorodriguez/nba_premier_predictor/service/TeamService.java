@@ -14,8 +14,10 @@ import com.armandorodriguez.nba_premier_predictor.domain.Team;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamDashboardResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamGameLogResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamRecordResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.SeasonResponse;
 import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundException;
+import com.armandorodriguez.nba_premier_predictor.repository.GameRepository;
 import com.armandorodriguez.nba_premier_predictor.repository.TeamGameStatsRepository;
 import com.armandorodriguez.nba_premier_predictor.repository.TeamRepository;
 
@@ -33,11 +35,13 @@ public class TeamService {
 
     private final TeamRepository teamRepository;
     private final TeamGameStatsRepository statsRepository;
+    private final GameRepository gameRepository;
     private final SeasonService seasonService;
 
-    public TeamService(TeamRepository teamRepository, TeamGameStatsRepository statsRepository, SeasonService seasonService) {
+    public TeamService(TeamRepository teamRepository, TeamGameStatsRepository statsRepository, GameRepository gameRepository, SeasonService seasonService) {
         this.teamRepository = teamRepository;
         this.statsRepository = statsRepository;
+        this.gameRepository = gameRepository;
         this.seasonService = seasonService;
     }
 
@@ -50,14 +54,17 @@ public class TeamService {
         return TeamResponse.from(findTeam(teamId));
     }
 
-    @Cacheable(cacheNames = "teamDashboards", key = "#teamId + ':' + (#season == null ? 'all' : #season)")
+    @Cacheable(cacheNames = "teamDashboards", key = "'v3:' + #teamId + ':' + (#season == null ? 'all' : #season)")
     public TeamDashboardResponse dashboard(Long teamId, Integer season) {
         Team team = findTeam(teamId);
         List<TeamGameLogResponse> recentGames = statsRepository
                 .findGameLogs(teamId, season, null, PageRequest.of(0, 10))
                 .map(TeamGameLogResponse::from)
                 .toList();
-        return new TeamDashboardResponse(TeamResponse.from(team), recentGames);
+        TeamRecordResponse record = TeamRecordResponse.of(
+                gameRepository.countRegularSeasonResults(teamId, season, true),
+                gameRepository.countRegularSeasonResults(teamId, season, false));
+        return new TeamDashboardResponse(TeamResponse.from(team), record, recentGames);
     }
 
     public Page<TeamGameLogResponse> gameLogs(Long teamId, Integer season, String query, Pageable pageable) {

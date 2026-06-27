@@ -85,7 +85,7 @@ class CoreApiIntegrationTests {
     void playerGamesEndpointReturnsSeededGameLog() throws Exception {
         mockMvc.perform(get("/api/players/201939/games").param("season", "2023"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].gameId").value(12300001))
                 .andExpect(jsonPath("$.content[0].seasonLabel").value("2023-2024"))
                 .andExpect(jsonPath("$.content[0].opponentTeamName").value("Los Angeles Lakers"))
@@ -93,7 +93,8 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.content[0].opponentScore").value(115))
                 .andExpect(jsonPath("$.content[0].points").value(32))
                 .andExpect(jsonPath("$.content[0].assists").value(7))
-                .andExpect(jsonPath("$.content[0].rebounds").value(5));
+                .andExpect(jsonPath("$.content[0].rebounds").value(5))
+                .andExpect(jsonPath("$.content[0].fieldGoalPercentage").value(0.5));
     }
 
     @Test
@@ -102,7 +103,7 @@ class CoreApiIntegrationTests {
                         .param("season", "2023")
                         .param("query", "Lakers"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].gameId").value(12300001));
     }
 
@@ -113,7 +114,7 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].seasonStartYear").value(2023))
                 .andExpect(jsonPath("$[0].label").value("2023-2024"))
-                .andExpect(jsonPath("$[0].gameCount").value(1));
+                .andExpect(jsonPath("$[0].gameCount").value(2));
     }
 
     @Test
@@ -149,7 +150,7 @@ class CoreApiIntegrationTests {
     void gamesEndpointReturnsSeededGames() throws Exception {
         mockMvc.perform(get("/api/games").param("season", "2023").param("teamId", "1610612744"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].id").value(12300001))
                 .andExpect(jsonPath("$.content[0].homeTeamName").value("Golden State Warriors"))
                 .andExpect(jsonPath("$.content[0].awayTeamName").value("Los Angeles Lakers"))
@@ -164,21 +165,30 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].seasonStartYear").value(2023))
                 .andExpect(jsonPath("$[0].label").value("2023-2024"))
-                .andExpect(jsonPath("$[0].gameCount").value(1));
+                .andExpect(jsonPath("$[0].gameCount").value(2));
     }
 
     @Test
     void teamGamesEndpointReturnsOpponentAndScoreContext() throws Exception {
         mockMvc.perform(get("/api/teams/1610612744/games")
                         .param("season", "2023")
-                        .param("query", "Lakers"))
+                .param("query", "Lakers"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].gameId").value(12300001))
                 .andExpect(jsonPath("$.content[0].seasonLabel").value("2023-2024"))
                 .andExpect(jsonPath("$.content[0].opponentTeamName").value("Los Angeles Lakers"))
                 .andExpect(jsonPath("$.content[0].teamScore").value(120))
                 .andExpect(jsonPath("$.content[0].opponentScore").value(115));
+    }
+
+    @Test
+    void teamDashboardReturnsRegularSeasonRecord() throws Exception {
+        mockMvc.perform(get("/api/teams/1610612744/dashboard").param("season", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.regularSeasonRecord.wins").value(2))
+                .andExpect(jsonPath("$.regularSeasonRecord.losses").value(0))
+                .andExpect(jsonPath("$.regularSeasonRecord.winPercentage").value(1.0));
     }
 
     @Test
@@ -194,9 +204,9 @@ class CoreApiIntegrationTests {
     void gamesEndpointSupportsMatchupSearch() throws Exception {
         mockMvc.perform(get("/api/games")
                         .param("season", "2023")
-                        .param("query", "Lakers"))
+                .param("query", "Lakers"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].id").value(12300001));
     }
 

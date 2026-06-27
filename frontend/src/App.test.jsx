@@ -11,6 +11,11 @@ const bannedNormalCopy = [
   'feature snapshot',
   'Load Snapshot',
   'N/A',
+  'Unknown',
+  'PREGAME READ',
+  'MISS RATE',
+  'FLOOR CEILING',
+  'PTS REB AST',
 ];
 
 describe('NBA Premier Predictor frontend', () => {
@@ -29,22 +34,27 @@ describe('NBA Premier Predictor frontend', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: /NBA Premier Predictor/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Open Dashboard/i })).toHaveAttribute('href', '/dashboard');
-    expect(screen.getByText(/player lines, fantasy output and game scores/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Make a Pick/i })).toHaveAttribute('href', '/predict/player');
+    expect(screen.getByRole('link', { name: /Browse Players/i })).toHaveAttribute('href', '/players');
+    expect(screen.getByText(/Pick a player, choose a matchup/i)).toBeInTheDocument();
+    expect(screen.getByAltText(/Larry Bird and Magic Johnson/i)).toBeInTheDocument();
+    expect(screen.getByAltText(/Kobe Bryant and Michael Jordan/i)).toBeInTheDocument();
+    expect(screen.getByAltText(/LeBron James and Dwyane Wade/i)).toBeInTheDocument();
   });
 
-  test('normal dashboard copy does not expose implementation names', async () => {
+  test('dashboard route redirects to players without exposing implementation names', async () => {
     window.history.pushState({}, '', '/dashboard');
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Players' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Dashboard/i })).not.toBeInTheDocument();
     for (const phrase of bannedNormalCopy) {
       expect(document.body).not.toHaveTextContent(phrase);
     }
   });
 
-  test('shows Present for active players and readable positions', async () => {
+  test('shows Active for active players and readable positions', async () => {
     const user = userEvent.setup();
     window.history.pushState({}, '', '/players');
 
@@ -55,7 +65,7 @@ describe('NBA Premier Predictor frontend', () => {
 
     expect(await screen.findByText('Stephen Curry')).toBeInTheDocument();
     expect(screen.getByText('Guard')).toBeInTheDocument();
-    expect(screen.getByText('Present')).toBeInTheDocument();
+    expect(screen.getByText('Active')).toBeInTheDocument();
   });
 
   test('shows final season for retired players', async () => {
@@ -68,7 +78,7 @@ describe('NBA Premier Predictor frontend', () => {
 
     expect(await screen.findByText('Michael Jordan')).toBeInTheDocument();
     expect(screen.getByText('2002-2003')).toBeInTheDocument();
-    expect(screen.queryByText('Present')).not.toBeInTheDocument();
+    expect(screen.queryByText('Active')).not.toBeInTheDocument();
   });
 
   test('teams page asks for current NBA teams by default', async () => {
@@ -78,8 +88,21 @@ describe('NBA Premier Predictor frontend', () => {
 
     expect(await screen.findByText('Golden State Warriors')).toBeInTheDocument();
     expect(screen.getByText('Los Angeles Lakers')).toBeInTheDocument();
+    expect(screen.getByText('ATL')).toBeInTheDocument();
+    expect(screen.getByText('TOR')).toBeInTheDocument();
     expect(screen.queryByText('Sheboygan Red Skins')).not.toBeInTheDocument();
     expect(window.fetch.mock.calls.some(([url]) => String(url).includes('currentOnly=true'))).toBe(true);
+  });
+
+  test('team detail shows selected-season regular-season record', async () => {
+    window.history.pushState({}, '', '/teams/1610612744');
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Golden State Warriors' })).toBeInTheDocument();
+    expect(document.body).toHaveTextContent('12-5');
+    expect(document.body).toHaveTextContent('71%');
+    expect(screen.queryByText('Through')).not.toBeInTheDocument();
   });
 
   test('submits a player prediction through searchable choices', async () => {
@@ -95,9 +118,31 @@ describe('NBA Premier Predictor frontend', () => {
 
     expect(await screen.findByText('Expected Stat Line')).toBeInTheDocument();
     expect(screen.getByText('28')).toBeInTheDocument();
-    expect(screen.getByText('74%')).toBeInTheDocument();
+    expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(screen.queryByText('Fantasy Points')).not.toBeInTheDocument();
+    expect(screen.queryByText('Confidence')).not.toBeInTheDocument();
+    expect(screen.queryByText('How this was calculated')).not.toBeInTheDocument();
     expect(window.fetch.mock.calls.some(([url]) => String(url).includes('/api/features/player-snapshots/ensure'))).toBe(true);
     expect(window.fetch).toHaveBeenCalledWith('/api/predictions/player', expect.objectContaining({ method: 'POST' }));
+  });
+
+  test('fantasy prediction has fantasy-specific result copy', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/predict/fantasy');
+
+    render(<App />);
+
+    expect(screen.getByRole('option', { name: /Search a player first/i })).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Player/i), 'Steph');
+    await user.click(await screen.findByRole('button', { name: /Stephen Curry/i }));
+    await user.click(await screen.findByRole('button', { name: /Los Angeles Lakers/i }));
+    await user.click(screen.getByRole('button', { name: /Predict Fantasy/i }));
+
+    expect(await screen.findByText('Fantasy Outlook')).toBeInTheDocument();
+    expect(screen.getByText('Fantasy Points')).toBeInTheDocument();
+    expect(screen.getByText('Floor')).toBeInTheDocument();
+    expect(screen.getByText('Ceiling')).toBeInTheDocument();
+    expect(screen.queryByText('How this was calculated')).not.toBeInTheDocument();
   });
 
   test('submits a game-score prediction through a readable matchup', async () => {
@@ -125,19 +170,14 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.queryByText('12300001')).not.toBeInTheDocument();
   });
 
-  test('advanced model details are collapsed by default', async () => {
-    const user = userEvent.setup();
+  test('accuracy page does not expose advanced JSON details', async () => {
     window.history.pushState({}, '', '/model');
 
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Accuracy' })).toBeInTheDocument();
-    expect(screen.getByText('Advanced model info')).toBeInTheDocument();
-    expect(screen.getByText(/player-baseline-v1/i)).not.toBeVisible();
-
-    await user.click(screen.getByText('Advanced model info'));
-
-    expect(screen.getByText(/player-baseline-v1/i)).toBeVisible();
+    expect(screen.queryByText('Advanced model info')).not.toBeInTheDocument();
+    expect(screen.queryByText(/player-baseline-v1/i)).not.toBeInTheDocument();
   });
 
   test('renders landing route at mobile and desktop widths', () => {
@@ -235,6 +275,11 @@ function defaultFetch(path, options = {}) {
         points: 32,
         rebounds: 5,
         assists: 7,
+        fieldGoalPercentage: 0.5,
+        steals: 2,
+        blocks: 1,
+        turnovers: 3,
+        plusMinus: 8,
       },
     ]));
   }
@@ -261,6 +306,27 @@ function defaultFetch(path, options = {}) {
   if (path === '/api/predictions/player' && options.method === 'POST') {
     return jsonResponse({
       predictionId: 9,
+      modelVersion: 'player-baseline-v1',
+      trainedRows: 100,
+      gameId: 12300001,
+      playerId: 201939,
+      teamId: 1610612744,
+      projectedPoints: 28.4,
+      projectedRebounds: 5.1,
+      projectedAssists: 6.9,
+      projectedMinutes: 34.2,
+      fantasyPoints: 44.8,
+      fantasyFloor: 35.1,
+      fantasyCeiling: 54.3,
+      confidenceScore: 0.74,
+      riskLevel: 'medium',
+      factors: [],
+    });
+  }
+
+  if (path === '/api/predictions/fantasy' && options.method === 'POST') {
+    return jsonResponse({
+      predictionId: 11,
       modelVersion: 'player-baseline-v1',
       trainedRows: 100,
       gameId: 12300001,
@@ -382,6 +448,14 @@ function defaultFetch(path, options = {}) {
   if (path.startsWith('/api/teams?')) {
     return jsonResponse(page([
       {
+        id: 1610612737,
+        fullName: 'Atlanta Hawks',
+        abbreviation: 'ATL',
+        seasonFounded: 1968,
+        seasonActiveTill: 2100,
+        league: 'NBA',
+      },
+      {
         id: 1610612744,
         fullName: 'Golden State Warriors',
         abbreviation: 'GSW',
@@ -397,7 +471,38 @@ function defaultFetch(path, options = {}) {
         seasonActiveTill: 2100,
         league: 'NBA',
       },
+      {
+        id: 1610612761,
+        fullName: 'Toronto Raptors',
+        abbreviation: 'TOR',
+        seasonFounded: 1995,
+        seasonActiveTill: 2100,
+        league: 'NBA',
+      },
     ]));
+  }
+
+  if (path.startsWith('/api/teams/1610612744/dashboard')) {
+    return jsonResponse({
+      team: {
+        id: 1610612744,
+        fullName: 'Golden State Warriors',
+        abbreviation: 'GSW',
+        seasonFounded: 1946,
+        seasonActiveTill: 2100,
+        league: 'NBA',
+      },
+      regularSeasonRecord: {
+        wins: 12,
+        losses: 5,
+        winPercentage: 0.706,
+      },
+      recentGames: [],
+    });
+  }
+
+  if (path.startsWith('/api/teams/1610612744/games')) {
+    return jsonResponse(page([]));
   }
 
   if (path === '/api/model/metrics') {

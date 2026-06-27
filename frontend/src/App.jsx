@@ -1,11 +1,8 @@
 import {
-  Activity,
   BarChart3,
   CalendarDays,
   Gauge,
   History,
-  Home,
-  LineChart,
   Loader2,
   Search,
   ShieldCheck,
@@ -18,6 +15,7 @@ import { useEffect, useState } from 'react';
 import {
   BrowserRouter,
   Link,
+  Navigate,
   NavLink,
   Outlet,
   Route,
@@ -29,8 +27,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Line,
-  LineChart as ReLineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -38,10 +34,12 @@ import {
 } from 'recharts';
 
 import dunkSilhouette from './assets/dunk-silhouette.jpg';
+import kobeJordan from './assets/kobe-jordan.jpg';
+import larryMagic from './assets/larry-magic.jpg';
+import lebronWade from './assets/lebron-wade.jpg';
 import { apiGet, apiPost, compactNumber, pageItems, percent } from './api.js';
 
 const navItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: Home },
   { to: '/players', label: 'Players', icon: Users },
   { to: '/teams', label: 'Teams', icon: ShieldCheck },
   { to: '/games', label: 'Games', icon: CalendarDays },
@@ -52,7 +50,9 @@ const navItems = [
   { to: '/history', label: 'History', icon: History },
 ];
 
-const defaultSeason = '2023';
+const nameCorrections = {
+  'JamesOn Curry': 'Jameson Curry',
+};
 
 function App() {
   return (
@@ -60,7 +60,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route element={<AppShell />}>
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard" element={<Navigate to="/players" replace />} />
           <Route path="/players" element={<PlayersPage />} />
           <Route path="/players/:playerId" element={<PlayerDetailPage />} />
           <Route path="/teams" element={<TeamsPage />} />
@@ -95,34 +95,35 @@ function Landing() {
 
       <section className="landing-hero">
         <div className="brand-lockup">
-          <span className="brand-kicker">before tipoff</span>
           <h1>NBA Premier Predictor</h1>
         </div>
         <div className="hero-copy">
-          <p>Predict player lines, fantasy output and game scores using what was known before tipoff.</p>
+          <p>Pick a player, choose a matchup and see the projection in basketball language.</p>
           <div className="hero-actions">
-            <IconLink to="/dashboard" icon={Activity}>
-              Open Dashboard
+            <IconLink to="/predict/player" icon={Target}>Make a Pick</IconLink>
+            <IconLink to="/players" icon={Users} variant="ghost">
+              Browse Players
             </IconLink>
-            <IconLink to="/predict/player" icon={Target} variant="ghost">
-              Make a Pick
+            <IconLink to="/games" icon={CalendarDays} variant="ghost">
+              Games
             </IconLink>
           </div>
         </div>
         <div className="hero-visual" aria-label="Dunk silhouette">
           <img src={dunkSilhouette} alt="" />
-          <div className="score-strip">
-            <span>PREGAME READ</span>
-            <strong>READY</strong>
-          </div>
         </div>
       </section>
 
-      <section className="landing-grid" aria-label="Platform snapshot">
-        <MetricTile label="Player" value="PTS REB AST" />
-        <MetricTile label="Fantasy" value="FLOOR CEILING" />
-        <MetricTile label="Score" value="MARGIN FAVORITE" />
-        <MetricTile label="Accuracy" value="MISS RATE" />
+      <section className="legend-collage" aria-label="NBA eras">
+        <article className="legend-card legend-card-tall">
+          <img src={larryMagic} alt="Larry Bird and Magic Johnson fighting for position" />
+        </article>
+        <article className="legend-card legend-card-wide">
+          <img src={kobeJordan} alt="Kobe Bryant and Michael Jordan during a game" />
+        </article>
+        <article className="legend-card">
+          <img src={lebronWade} alt="LeBron James and Dwyane Wade in transition" />
+        </article>
       </section>
     </main>
   );
@@ -149,65 +150,6 @@ function AppShell() {
         <Outlet />
       </div>
     </div>
-  );
-}
-
-function Dashboard() {
-  const metrics = useApi('/api/model/metrics');
-  const versions = useApi('/api/model/versions');
-  const history = useApi('/api/predictions/history?limit=8');
-  const health = useApi('/actuator/health');
-  const historyRows = Array.isArray(history.data) ? history.data : [];
-
-  return (
-    <Page title="Dashboard" eyebrow="game night">
-      <div className="dashboard-grid">
-        <StatusPanel
-          title="App Status"
-          value={health.data?.status === 'UP' ? 'Ready' : 'Checking'}
-          error={health.error && 'Connection problem'}
-          icon={Activity}
-        />
-        <StatusPanel
-          title="Player Picks"
-          value={metrics.error ? null : 'Ready'}
-          subvalue={`${compactNumber(playerTrainingRows(metrics.data), 0)} examples learned`}
-          error={metrics.error || versions.error ? 'Player picks need a refresh' : ''}
-          icon={Target}
-        />
-        <StatusPanel
-          title="Score Picks"
-          value={metrics.error ? null : 'Ready'}
-          subvalue={`${compactNumber(metrics.data?.gameScoreTrainedRows, 0)} examples learned`}
-          error={metrics.error || versions.error ? 'Score picks need a refresh' : ''}
-          icon={Trophy}
-        />
-      </div>
-
-      <section className="panel panel-wide">
-        <PanelHeader title="Recent Confidence" icon={LineChart} />
-        <ChartFrame empty={!historyRows.length} emptyLabel={history.error || 'No recent picks yet'}>
-          <ResponsiveContainer width="100%" height="100%">
-            <ReLineChart data={historyRows.map((row, index) => ({ ...row, index: index + 1 }))}>
-              <CartesianGrid stroke="rgba(255,255,255,.08)" vertical={false} />
-              <XAxis dataKey="index" stroke="#8d929f" tickLine={false} />
-              <YAxis stroke="#8d929f" tickLine={false} domain={[0, 1]} tickFormatter={(value) => `${value * 100}%`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(value) => percent(value)} />
-              <Line type="monotone" dataKey="confidenceScore" stroke="#f77f00" strokeWidth={2} dot={{ r: 3 }} />
-            </ReLineChart>
-          </ResponsiveContainer>
-        </ChartFrame>
-      </section>
-
-      <section className="split">
-        <MetricsBlock title="Player Accuracy" evaluation={metrics.data?.playerBaseline} />
-        <MetricsBlock title="Score Accuracy" evaluation={metrics.data?.gameScoreBaseline} />
-      </section>
-
-      <AdvancedDetails title="More details">
-        <JsonBlock value={versions.data} />
-      </AdvancedDetails>
-    </Page>
   );
 }
 
@@ -342,7 +284,7 @@ function PlayerDetailPage() {
             <PlayerAvatar player={data.player} />
             <div>
               <span>{readablePosition(data.player.position)}</span>
-              <strong>{cleanName(data.player.fullName)}</strong>
+              <strong>{cleanName(data.player.fullName) || 'Player not listed'}</strong>
               <p>{playerStartYear(data.player.fromYear)} to {playerEndYear(data.player.toYear, data.player)}</p>
             </div>
           </section>
@@ -427,14 +369,14 @@ function TeamDetailPage() {
             <TeamLogo team={data.team} />
             <div>
               <span>{data.team.abbreviation || 'NBA'}</span>
-              <strong>{cleanName(data.team.fullName)}</strong>
-              <p>Founded {data.team.seasonFounded || 'Unknown'}</p>
+              <strong>{cleanName(data.team.fullName) || 'Team not listed'}</strong>
+              <p>Founded {data.team.seasonFounded || 'Year not listed'}</p>
             </div>
           </section>
           <div className="dashboard-grid">
-            <StatusPanel title="Abbreviation" value={data.team.abbreviation} icon={ShieldCheck} />
-            <StatusPanel title="Through" value={teamEndYear(data.team.seasonActiveTill)} icon={Trophy} />
-            <StatusPanel title="Founded" value={data.team.seasonFounded} icon={CalendarDays} />
+            <StatusPanel title="Record" value={teamRecordText(data.regularSeasonRecord)} subvalue={seasonLabel(season)} icon={Trophy} />
+            <StatusPanel title="Win Rate" value={teamWinRateText(data.regularSeasonRecord)} subvalue="Regular season" icon={Gauge} />
+            <StatusPanel title="Founded" value={data.team.seasonFounded || 'Year not listed'} icon={CalendarDays} />
           </div>
           <section className="panel panel-wide">
             <PanelHeader title="Recent Team Scores" icon={BarChart3} />
@@ -614,7 +556,7 @@ function PlayerPredictionPage({ mode }) {
       });
       setPrediction(response);
     } catch (err) {
-      setError('There is not enough pregame data for that pick yet');
+      setError(friendlyError(err) || 'There is not enough game data for that pick yet');
     } finally {
       setLoading(false);
     }
@@ -632,7 +574,12 @@ function PlayerPredictionPage({ mode }) {
             />
           </Field>
           <Field label="Season">
-            <SeasonSelect seasons={seasonRows} value={season} onChange={(value) => {
+            <SeasonSelect
+              seasons={seasonRows}
+              value={season}
+              disabled={!selectedPlayer || !seasonRows.length}
+              placeholder={selectedPlayer ? 'Loading seasons' : 'Search a player first'}
+              onChange={(value) => {
               setSeason(value);
               setSelectedGame(null);
               setPrediction(null);
@@ -664,7 +611,7 @@ function PlayerPredictionPage({ mode }) {
           empty={playerQuery.trim().length < 2 ? 'Type at least 2 letters' : playerSearch.error || 'No players found'}
           selectedId={selectedPlayer?.id}
           getId={(row) => row.id}
-          getTitle={(row) => cleanName(row.fullName)}
+          getTitle={(row) => cleanName(row.fullName) || 'Player not listed'}
           getMeta={(row) => `${readablePosition(row.position)} - ${playerEndYear(row.toYear, row)}`}
           getImage={(row) => playerHeadshotUrl(row.id)}
           onChoose={choosePlayer}
@@ -697,7 +644,6 @@ function PlayerPredictionPage({ mode }) {
         <ErrorBanner message={error} />
       </section>
       <PredictionResult prediction={prediction} game={selectedGame} fantasy={mode === 'fantasy'} />
-      <AdvancedPredictionDetails prediction={prediction} snapshot={snapshot} />
     </Page>
   );
 }
@@ -759,7 +705,7 @@ function GameScorePredictionPage() {
       });
       setPrediction(response);
     } catch (err) {
-      setError('There is not enough pregame data for that matchup yet');
+      setError(friendlyError(err) || 'There is not enough game data for that matchup yet');
     } finally {
       setLoading(false);
     }
@@ -819,14 +765,12 @@ function GameScorePredictionPage() {
         <ErrorBanner message={error} />
       </section>
       <GameScoreResult prediction={prediction} game={selectedGame} />
-      <AdvancedPredictionDetails prediction={prediction} snapshot={snapshot} />
     </Page>
   );
 }
 
 function ModelPage() {
   const metrics = useApi('/api/model/metrics');
-  const versions = useApi('/api/model/versions');
   const [evaluatedMetrics, setEvaluatedMetrics] = useState(null);
   const [evaluationStarted, setEvaluationStarted] = useState(false);
   const [evaluationError, setEvaluationError] = useState('');
@@ -843,7 +787,7 @@ function ModelPage() {
 
   return (
     <Page title="Accuracy" eyebrow="how close it has been">
-      <ErrorBanner message={metrics.error || versions.error || evaluationError} />
+      <ErrorBanner message={metrics.error || evaluationError} />
       {!hasAccuracyMetrics(displayMetrics) && !evaluationError && (
         <section className="panel">
           <EmptyState label={evaluationStarted ? 'Calculating accuracy' : 'Loading accuracy'} />
@@ -867,9 +811,6 @@ function ModelPage() {
         <MetricsBlock title="Player Accuracy" evaluation={displayMetrics?.playerBaseline} />
         <MetricsBlock title="Score Accuracy" evaluation={displayMetrics?.gameScoreBaseline} />
       </section>
-      <AdvancedDetails title="Advanced model info">
-        <JsonBlock value={versions.data} />
-      </AdvancedDetails>
     </Page>
   );
 }
@@ -1021,6 +962,33 @@ function MetricsBlock({ title, evaluation }) {
 
 function PredictionResult({ prediction, game, fantasy }) {
   if (!prediction) return null;
+  const actualStatLine = game && game.points !== null && game.points !== undefined;
+
+  if (fantasy) {
+    return (
+      <section className="panel panel-wide result-panel">
+        <PanelHeader title="Fantasy Outlook" icon={Sparkles} />
+        <div className="result-grid">
+          <MetricTile label="Fantasy Points" value={scoreNumber(prediction.fantasyPoints)} />
+          <MetricTile label="Floor" value={scoreNumber(prediction.fantasyFloor)} />
+          <MetricTile label="Ceiling" value={scoreNumber(prediction.fantasyCeiling)} />
+          <MetricTile label="Minutes" value={scoreNumber(prediction.projectedMinutes)} />
+        </div>
+        <div className="plain-read">
+          <strong>{fantasySummary(prediction)}</strong>
+          <span>{statLineSummary(prediction)}</span>
+        </div>
+        {actualStatLine && (
+          <div className="result-band">
+            <span>Actual stat line</span>
+            <strong>{statCell(game.points)} PTS - {statCell(game.rebounds)} REB - {statCell(game.assists)} AST</strong>
+            <span>{statCell(game.minutes)} MIN</span>
+          </div>
+        )}
+      </section>
+    );
+  }
+
   return (
     <section className="panel panel-wide result-panel">
       <PanelHeader title="Expected Stat Line" icon={Target} />
@@ -1029,27 +997,13 @@ function PredictionResult({ prediction, game, fantasy }) {
         <MetricTile label="Rebounds" value={scoreNumber(prediction.projectedRebounds)} />
         <MetricTile label="Assists" value={scoreNumber(prediction.projectedAssists)} />
         <MetricTile label="Minutes" value={scoreNumber(prediction.projectedMinutes)} />
-        <MetricTile label="Fantasy" value={scoreNumber(prediction.fantasyPoints)} />
-        <MetricTile label="Confidence" value={percent(prediction.confidenceScore)} />
+        <MetricTile label="FG%" value={fieldGoalText(game?.fieldGoalPercentage)} />
       </div>
-      {game && game.points !== null && game.points !== undefined && (
+      {actualStatLine && (
         <div className="result-band">
           <span>Actual stat line</span>
           <strong>{statCell(game.points)} PTS - {statCell(game.rebounds)} REB - {statCell(game.assists)} AST</strong>
-          <span>{statCell(game.minutes)} MIN</span>
-        </div>
-      )}
-      <div className="plain-read">
-        <strong>{prediction.riskLevel ? `${titleCase(prediction.riskLevel)} risk` : 'Risk unknown'}</strong>
-        <span>
-          This confidence score is a model confidence estimate, not a betting probability.
-        </span>
-      </div>
-      {fantasy && (
-        <div className="result-band">
-          <span>Floor {scoreNumber(prediction.fantasyFloor)}</span>
-          <strong>Ceiling {scoreNumber(prediction.fantasyCeiling)}</strong>
-          <span>Risk {prediction.riskLevel ? titleCase(prediction.riskLevel) : 'Unknown'}</span>
+          <span>{statCell(game.minutes)} MIN - {fieldGoalText(game.fieldGoalPercentage)} FG</span>
         </div>
       )}
     </section>
@@ -1087,37 +1041,11 @@ function GameScoreResult({ prediction, game }) {
       {game && game.homeScore !== null && game.homeScore !== undefined && game.awayScore !== null && game.awayScore !== undefined && (
         <div className="result-band">
           <span>Final score</span>
-          <strong>{cleanName(game.awayTeamName)} {scoreNumber(game.awayScore)} - {cleanName(game.homeTeamName)} {scoreNumber(game.homeScore)}</strong>
+          <strong>{cleanName(game.awayTeamName) || 'Away'} {scoreNumber(game.awayScore)} - {cleanName(game.homeTeamName) || 'Home'} {scoreNumber(game.homeScore)}</strong>
           <span>{formatShortDate(game.gameDateTimeEst || game.gameDate)}</span>
         </div>
       )}
     </section>
-  );
-}
-
-function AdvancedPredictionDetails({ prediction, snapshot }) {
-  if (!prediction && !snapshot) return null;
-  return (
-    <AdvancedDetails title="How this was calculated">
-      <div className="snapshot-summary">
-        {snapshot && (
-          <>
-            <MetaBox label="Pregame data" value={`#${snapshot.snapshotId}`} />
-            <MetaBox label="Data cutoff" value={formatDateTime(snapshot.dataCutoffTime)} />
-            <MetaBox label="Home team" value={snapshot.homeTeamId || 'Unknown'} />
-            <MetaBox label="Away team" value={snapshot.awayTeamId || 'Unknown'} />
-          </>
-        )}
-        {prediction && (
-          <>
-            <MetaBox label="Prediction" value={`#${prediction.predictionId || 'Unknown'}`} />
-            <MetaBox label="Version" value={prediction.modelVersion || 'Unknown'} />
-            <MetaBox label="Examples" value={compactNumber(prediction.trainedRows, 0)} />
-          </>
-        )}
-      </div>
-      <JsonBlock value={{ factors: prediction?.factors, features: snapshot?.features }} />
-    </AdvancedDetails>
   );
 }
 
@@ -1127,15 +1055,6 @@ function AdvancedDetails({ title, children }) {
       <summary>{title}</summary>
       <div className="advanced-details-body">{children}</div>
     </details>
-  );
-}
-
-function MetaBox({ label, value }) {
-  return (
-    <div>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
   );
 }
 
@@ -1153,6 +1072,11 @@ function GameLogTable({ rows }) {
           ['points', 'PTS', statCell],
           ['rebounds', 'REB', statCell],
           ['assists', 'AST', statCell],
+          ['steals', 'STL', statCell],
+          ['blocks', 'BLK', statCell],
+          ['turnovers', 'TO', statCell],
+          ['plusMinus', '+/-', plusMinusText],
+          ['fieldGoalPercentage', 'FG%', fieldGoalText],
           ['minutes', 'MIN', statCell],
         ]}
         empty="No recent games"
@@ -1261,10 +1185,17 @@ function Field({ label, children }) {
   );
 }
 
-function SeasonSelect({ seasons = [], value, onChange }) {
-  const rows = seasons.length ? seasons : [{ seasonStartYear: defaultSeason, label: seasonLabel(defaultSeason) }];
+function SeasonSelect({ seasons = [], value, onChange, placeholder = 'Choose season', disabled = false }) {
+  const rows = seasons.length ? seasons : [];
+  if (!rows.length) {
+    return (
+      <select value="" disabled>
+        <option value="">{placeholder}</option>
+      </select>
+    );
+  }
   return (
-    <select value={value || rows[0]?.seasonStartYear || ''} onChange={(event) => onChange(event.target.value)}>
+    <select value={value || rows[0]?.seasonStartYear || ''} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
       {rows.map((season) => (
         <option key={season.seasonStartYear} value={season.seasonStartYear}>
           {season.label || seasonLabel(season.seasonStartYear)}
@@ -1278,7 +1209,7 @@ function PlayerIdentity({ player }) {
   return (
     <span className="identity-cell">
       <PlayerAvatar player={player} />
-      <span>{cleanName(player?.fullName)}</span>
+      <span>{cleanName(player?.fullName) || 'Player not listed'}</span>
     </span>
   );
 }
@@ -1287,7 +1218,7 @@ function TeamIdentity({ team }) {
   return (
     <span className="identity-cell">
       <TeamLogo team={team} />
-      <span>{cleanName(team?.fullName)}</span>
+      <span>{cleanName(team?.fullName) || 'Team not listed'}</span>
     </span>
   );
 }
@@ -1333,8 +1264,8 @@ function StatusPanel({ title, value, subvalue, error, icon: Icon }) {
   return (
     <section className={`panel status-panel ${error ? 'panel-error' : ''}`}>
       <PanelHeader title={title} icon={Icon} />
-      <strong>{error ? 'Needs attention' : value || 'Unknown'}</strong>
-      <span>{error || subvalue || 'Ready'}</span>
+      <strong>{error ? 'Needs attention' : value || 'Not listed'}</strong>
+      <span>{error || subvalue || 'Open'}</span>
     </section>
   );
 }
@@ -1400,10 +1331,6 @@ function Pager({ page, setPage, last }) {
   );
 }
 
-function JsonBlock({ value }) {
-  return <pre className="json-block">{JSON.stringify(value || {}, null, 2)}</pre>;
-}
-
 function useApi(path) {
   const [state, setState] = useState({ data: null, error: '', loading: Boolean(path) });
 
@@ -1463,9 +1390,37 @@ function hitRateText(row) {
   return `Average miss ${compactNumber(row.mae)}`;
 }
 
+function fantasySummary(prediction) {
+  const floor = scoreNumber(prediction.fantasyFloor);
+  const ceiling = scoreNumber(prediction.fantasyCeiling);
+  return `${floor}-${ceiling} point range`;
+}
+
+function statLineSummary(prediction) {
+  return `${scoreNumber(prediction.projectedPoints)} PTS, ${scoreNumber(prediction.projectedRebounds)} REB, ${scoreNumber(prediction.projectedAssists)} AST`;
+}
+
+function fieldGoalText(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return 'After game';
+  }
+  return `${Math.round(Number(value) * 100)}%`;
+}
+
+function teamRecordText(record) {
+  if (!record) return 'Record not listed';
+  return `${record.wins || 0}-${record.losses || 0}`;
+}
+
+function teamWinRateText(record) {
+  if (!record) return 'Not listed';
+  return percent(record.winPercentage);
+}
+
 function seasonLabel(value) {
+  if (value === null || value === undefined || value === '') return 'Season not listed';
   const start = Number(value);
-  return Number.isFinite(start) ? `${start}-${start + 1}` : 'Unknown';
+  return Number.isFinite(start) ? `${start}-${start + 1}` : 'Season not listed';
 }
 
 function formatColumn(row, [key, , formatter]) {
@@ -1473,22 +1428,22 @@ function formatColumn(row, [key, , formatter]) {
 }
 
 function playerStartYear(value) {
-  return value ? seasonLabel(value) : 'Unknown';
+  return value ? seasonLabel(value) : 'Start not listed';
 }
 
 function playerEndYear(value, row) {
   if (row?.active && (value === null || value === undefined || Number(value) >= currentSeasonStartYear())) {
-    return 'Present';
+    return 'Active';
   }
-  return value ? seasonLabel(value) : 'Unknown';
+  return value ? seasonLabel(value) : 'Final season not listed';
 }
 
 function teamEndYear(value) {
-  return value && Number(value) < 2100 ? seasonLabel(value) : 'Present';
+  return value && Number(value) < 2100 ? seasonLabel(value) : 'Active';
 }
 
 function readablePosition(value) {
-  if (!value) return 'Unknown';
+  if (!value) return 'Role not listed';
   return String(value)
     .split('/')
     .map((part) => ({ G: 'Guard', F: 'Forward', C: 'Center' })[part] || part)
@@ -1527,7 +1482,7 @@ function favoriteName(prediction, game) {
   if (String(prediction.predictedWinnerTeamId) === String(prediction.awayTeamId)) {
     return game?.awayTeamName || 'Away';
   }
-  return 'Unknown';
+  return 'No favorite';
 }
 
 function labelize(value) {
@@ -1544,7 +1499,8 @@ function titleCase(value) {
 
 function cleanName(value) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
-  return text && text.toLowerCase() !== 'null' ? text : 'Unknown';
+  if (!text || text.toLowerCase() === 'null') return '';
+  return nameCorrections[text] || text;
 }
 
 function initialsFor(value) {
@@ -1566,10 +1522,10 @@ function teamLogoUrl(teamId) {
 }
 
 function formatCell(value) {
-  if (value === null || value === undefined || value === '') return 'Unknown';
+  if (value === null || value === undefined || value === '') return 'Not listed';
   if (typeof value === 'number') return Number.isInteger(value) ? value : compactNumber(value, 2);
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  if (typeof value === 'string' && value.includes('T')) return formatDateTime(value);
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) return formatDateTime(value);
   return value;
 }
 
@@ -1579,7 +1535,7 @@ function statCell(value) {
 }
 
 function scoreNumber(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'Unknown';
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'Not listed';
   return String(Math.round(Number(value)));
 }
 
@@ -1603,19 +1559,19 @@ function plusMinusText(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) return 'Unknown';
+  if (!value) return 'Date not listed';
   return String(value).replace('T', ' ').replace(/\.\d+$/, '');
 }
 
 function formatMinuteDateTime(value) {
-  if (!value) return 'Unknown';
+  if (!value) return 'Date not listed';
   return formatDateTime(value).slice(0, 16);
 }
 
 function formatShortDate(value) {
-  if (!value) return 'Unknown';
+  if (!value) return 'Date not listed';
   const [date] = String(value).split('T');
-  return date || 'Unknown';
+  return date || 'Date not listed';
 }
 
 function currentSeasonStartYear() {
