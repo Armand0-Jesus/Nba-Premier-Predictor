@@ -10,7 +10,15 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 
-from app.baseline_model import clamp_round, clean_features, example_time, numeric_feature, regression_metrics, split_time_groups
+from app.baseline_model import (
+    clamp_round,
+    clean_features,
+    example_time,
+    numeric_feature,
+    regression_metrics,
+    sample_weights,
+    split_time_groups,
+)
 
 
 TARGETS = (
@@ -30,16 +38,21 @@ class GameScoreBaselineModel:
     fallback_targets: dict[str, float] = field(default_factory=dict)
     trained_rows: int = 0
     model_version: str = "game-score-baseline-v1"
+    recency_halflife_days: float | None = None
 
     @classmethod
-    def fit(cls, rows: list[dict[str, Any]]) -> "GameScoreBaselineModel":
+    def fit(cls, rows: list[dict[str, Any]], recency_halflife_days: float | None = None) -> "GameScoreBaselineModel":
         examples = complete_training_examples(rows)
         if not examples:
             raise ValueError("No complete game-score training rows were provided")
-        return cls._fit_examples(examples)
+        return cls._fit_examples(examples, recency_halflife_days)
 
     @classmethod
-    def evaluate_time_split(cls, rows: list[dict[str, Any]], train_ratio: float = 0.8) -> dict[str, Any]:
+    def evaluate_time_split(
+            cls,
+            rows: list[dict[str, Any]],
+            train_ratio: float = 0.8,
+            recency_halflife_days: float | None = None) -> dict[str, Any]:
         if train_ratio <= 0 or train_ratio >= 1:
             raise ValueError("train_ratio must be greater than 0 and less than 1")
 
@@ -48,7 +61,7 @@ class GameScoreBaselineModel:
             raise ValueError("At least two complete game-score training rows are required for evaluation")
 
         train_examples, test_examples, train_groups, test_groups = split_time_groups(examples, train_ratio)
-        model = cls._fit_examples(train_examples)
+        model = cls._fit_examples(train_examples, recency_halflife_days)
 
         values_by_target: dict[str, list[tuple[float, float]]] = {output_name: [] for output_name, _ in TARGETS}
         baseline_values: dict[str, dict[str, list[tuple[float, float]]]] = {
@@ -70,6 +83,7 @@ class GameScoreBaselineModel:
             "test_rows": len(test_examples),
             "total_rows": len(examples),
             "train_ratio": train_ratio,
+            "recency_halflife_days": recency_halflife_days,
             "split_strategy": "time_grouped_by_game_datetime",
             "train_groups": train_groups,
             "test_groups": test_groups,
@@ -91,7 +105,7 @@ class GameScoreBaselineModel:
         }
 
     @classmethod
-    def _fit_examples(cls, examples: list[dict[str, Any]]) -> "GameScoreBaselineModel":
+    def _fit_examples(cls, examples: list[dict[str, Any]], recency_halflife_days: float | None = None) -> "GameScoreBaselineModel":
         features = [example["features"] for example in examples]
         targets = [example["targets"] for example in examples]
         pipeline = Pipeline([
@@ -99,13 +113,22 @@ class GameScoreBaselineModel:
             ("imputer", SimpleImputer(strategy="constant", fill_value=0.0)),
             ("model", Ridge(alpha=1.0)),
         ])
-        pipeline.fit(features, targets)
+        weights = sample_weights(examples, recency_halflife_days)
+        if weights is None:
+            pipeline.fit(features, targets)
+        else:
+            pipeline.fit(features, targets, model__sample_weight=weights)
 
         fallback_targets = {}
         for index, (output_name, _) in enumerate(TARGETS):
             fallback_targets[output_name] = round(sum(row[index] for row in targets) / len(targets), 2)
 
-        return cls(pipeline=pipeline, fallback_targets=fallback_targets, trained_rows=len(examples))
+        return cls(
+            pipeline=pipeline,
+            fallback_targets=fallback_targets,
+            trained_rows=len(examples),
+            recency_halflife_days=recency_halflife_days,
+        )
 
     @classmethod
     def load(cls, artifact_path: Path) -> "GameScoreBaselineModel":
@@ -117,6 +140,7 @@ class GameScoreBaselineModel:
             fallback_targets=artifact.get("fallback_targets", {}),
             trained_rows=artifact.get("trained_rows", 0),
             model_version=artifact.get("model_version", "game-score-baseline-v1"),
+            recency_halflife_days=artifact.get("recency_halflife_days"),
         )
 
     def save(self, artifact_path: Path) -> None:
@@ -126,6 +150,7 @@ class GameScoreBaselineModel:
             "fallback_targets": self.fallback_targets,
             "trained_rows": self.trained_rows,
             "model_version": self.model_version,
+            "recency_halflife_days": self.recency_halflife_days,
         }, artifact_path)
 
     def predict(self, raw_features: dict[str, Any], home_team_id: int | None, away_team_id: int | None) -> dict[str, Any]:

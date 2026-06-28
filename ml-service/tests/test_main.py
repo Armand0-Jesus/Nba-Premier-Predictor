@@ -36,7 +36,9 @@ class MainEndpointTests(unittest.TestCase):
         self.assertIn("/train/player", paths)
         self.assertIn("/train/game-score", paths)
         self.assertIn("/evaluate/player-baseline", paths)
+        self.assertIn("/evaluate/player-baseline/windows", paths)
         self.assertIn("/evaluate/game-score", paths)
+        self.assertIn("/evaluate/game-score/windows", paths)
         self.assertIn("/predict/player", paths)
         self.assertIn("/predict/player-stats", paths)
         self.assertIn("/predict/fantasy", paths)
@@ -144,8 +146,8 @@ class MainEndpointTests(unittest.TestCase):
 
         self.assertEqual([{"row": 1}, {"row": 2}, {"row": 3}], rows)
         self.assertEqual([
-            call(2023, 2, 0),
-            call(2023, 2, 2),
+            call(2023, 2, 0, None, None),
+            call(2023, 2, 2, None, None),
         ], fetch_page.mock_calls)
 
     def test_fetch_game_score_training_rows_pages_backend_requests(self):
@@ -160,8 +162,24 @@ class MainEndpointTests(unittest.TestCase):
 
         self.assertEqual([{"row": 1}, {"row": 2}, {"row": 3}], rows)
         self.assertEqual([
-            call(2023, 2, 0),
-            call(2023, 2, 2),
+            call(2023, 2, 0, None, None),
+            call(2023, 2, 2, None, None),
+        ], fetch_page.mock_calls)
+
+    def test_fetch_player_training_rows_pages_season_range(self):
+        pages = [
+            [{"row": 1}, {"row": 2}],
+            [{"row": 3}],
+        ]
+
+        with patch.object(main, "BACKEND_PAGE_SIZE", 2):
+            with patch.object(main, "fetch_player_training_page", side_effect=pages) as fetch_page:
+                rows = main.fetch_player_training_rows(season=None, limit=5, start_season=2022, end_season=2023)
+
+        self.assertEqual([{"row": 1}, {"row": 2}, {"row": 3}], rows)
+        self.assertEqual([
+            call(None, 2, 0, 2022, 2023),
+            call(None, 2, 2, 2022, 2023),
         ], fetch_page.mock_calls)
 
     def test_predict_player_accepts_valid_request(self):
@@ -280,6 +298,33 @@ class MainEndpointTests(unittest.TestCase):
         finally:
             shutil.rmtree(artifact_dir, ignore_errors=True)
 
+    def test_train_player_fetches_season_range(self):
+        rows = [
+            training_row(10, 4, 3, 28, 19.3, "2022-12-01T22:00:00"),
+            training_row(20, 6, 5, 32, 36.7, "2024-01-03T22:00:00"),
+            training_row(24, 8, 7, 34, 44.1, "2024-01-05T22:00:00"),
+        ]
+        artifact_dir = Path("unit-test-artifacts")
+        shutil.rmtree(artifact_dir, ignore_errors=True)
+        artifact_path = artifact_dir / "player_baseline.joblib"
+        backend_response = BackendResponse(rows)
+
+        try:
+            with patch.object(main, "MODEL_ARTIFACT_PATH", artifact_path):
+                with patch.object(main.urllib.request, "urlopen", return_value=backend_response) as urlopen:
+                    with TestClient(main.app) as client:
+                        response = client.post("/train/player?startSeason=2022&endSeason=2023&limit=3")
+
+            self.assertEqual(200, response.status_code)
+            self.assertEqual(2022, response.json()["start_season"])
+            self.assertEqual(2023, response.json()["end_season"])
+            requested_url = urlopen.call_args.args[0]
+            self.assertIn("startSeason=2022", requested_url)
+            self.assertIn("endSeason=2023", requested_url)
+            self.assertNotIn("season=", requested_url)
+        finally:
+            shutil.rmtree(artifact_dir, ignore_errors=True)
+
     def test_train_game_score_fetches_backend_rows_and_saves_artifact(self):
         rows = [
             game_score_training_row(100, 90, "2024-01-01T22:00:00"),
@@ -307,6 +352,29 @@ class MainEndpointTests(unittest.TestCase):
             self.assertIn("season=2023", requested_url)
         finally:
             shutil.rmtree(artifact_dir, ignore_errors=True)
+
+    def test_window_evaluation_compares_ranges(self):
+        rows = [
+            training_row(10, 4, 3, 28, 19.3, "2022-12-01T22:00:00"),
+            training_row(12, 5, 4, 29, 23.0, "2023-01-01T22:00:00"),
+            training_row(20, 6, 5, 32, 36.7, "2024-01-03T22:00:00"),
+            training_row(24, 8, 7, 34, 44.1, "2024-01-05T22:00:00"),
+        ]
+
+        with patch.object(main, "fetch_player_training_rows", return_value=rows) as fetch_rows:
+            response = main.evaluate_player_baseline_windows(
+                windows="2022:2023,2023:2023",
+                limit=4,
+                train_ratio=0.75,
+            )
+
+        self.assertEqual("player", response["modelType"])
+        self.assertEqual(2, len(response["windows"]))
+        self.assertIn("bestWindow", response)
+        self.assertEqual([
+            call(None, 4, 2022, 2023),
+            call(None, 4, 2023, 2023),
+        ], fetch_rows.mock_calls)
 
 
 class BackendResponse:

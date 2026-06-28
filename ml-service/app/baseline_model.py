@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import math
 from pathlib import Path
 from typing import Any
@@ -35,16 +36,21 @@ class PlayerBaselineModel:
     fallback_targets: dict[str, float] = field(default_factory=dict)
     trained_rows: int = 0
     model_version: str = "player-baseline-v1"
+    recency_halflife_days: float | None = None
 
     @classmethod
-    def fit(cls, rows: list[dict[str, Any]]) -> "PlayerBaselineModel":
+    def fit(cls, rows: list[dict[str, Any]], recency_halflife_days: float | None = None) -> "PlayerBaselineModel":
         examples = complete_training_examples(rows)
         if not examples:
             raise ValueError("No complete player training rows were provided")
-        return cls._fit_examples(examples)
+        return cls._fit_examples(examples, recency_halflife_days)
 
     @classmethod
-    def evaluate_time_split(cls, rows: list[dict[str, Any]], train_ratio: float = 0.8) -> dict[str, Any]:
+    def evaluate_time_split(
+            cls,
+            rows: list[dict[str, Any]],
+            train_ratio: float = 0.8,
+            recency_halflife_days: float | None = None) -> dict[str, Any]:
         if train_ratio <= 0 or train_ratio >= 1:
             raise ValueError("train_ratio must be greater than 0 and less than 1")
 
@@ -53,7 +59,7 @@ class PlayerBaselineModel:
             raise ValueError("At least two complete player training rows are required for evaluation")
 
         train_examples, test_examples, train_groups, test_groups = split_time_groups(examples, train_ratio)
-        model = cls._fit_examples(train_examples)
+        model = cls._fit_examples(train_examples, recency_halflife_days)
 
         values_by_target: dict[str, list[tuple[float, float]]] = {output_name: [] for output_name, _ in TARGETS}
         baseline_values: dict[str, dict[str, list[tuple[float, float]]]] = {
@@ -75,6 +81,7 @@ class PlayerBaselineModel:
             "test_rows": len(test_examples),
             "total_rows": len(examples),
             "train_ratio": train_ratio,
+            "recency_halflife_days": recency_halflife_days,
             "split_strategy": "time_grouped_by_game_datetime",
             "train_groups": train_groups,
             "test_groups": test_groups,
@@ -96,7 +103,7 @@ class PlayerBaselineModel:
         }
 
     @classmethod
-    def _fit_examples(cls, examples: list[dict[str, Any]]) -> "PlayerBaselineModel":
+    def _fit_examples(cls, examples: list[dict[str, Any]], recency_halflife_days: float | None = None) -> "PlayerBaselineModel":
         features = [example["features"] for example in examples]
         targets = [example["targets"] for example in examples]
         pipeline = Pipeline([
@@ -104,13 +111,22 @@ class PlayerBaselineModel:
             ("imputer", SimpleImputer(strategy="constant", fill_value=0.0)),
             ("model", Ridge(alpha=1.0)),
         ])
-        pipeline.fit(features, targets)
+        weights = sample_weights(examples, recency_halflife_days)
+        if weights is None:
+            pipeline.fit(features, targets)
+        else:
+            pipeline.fit(features, targets, model__sample_weight=weights)
 
         fallback_targets = {}
         for index, (output_name, _) in enumerate(TARGETS):
             fallback_targets[output_name] = round(sum(row[index] for row in targets) / len(targets), 2)
 
-        return cls(pipeline=pipeline, fallback_targets=fallback_targets, trained_rows=len(examples))
+        return cls(
+            pipeline=pipeline,
+            fallback_targets=fallback_targets,
+            trained_rows=len(examples),
+            recency_halflife_days=recency_halflife_days,
+        )
 
     @classmethod
     def load(cls, artifact_path: Path) -> "PlayerBaselineModel":
@@ -122,6 +138,7 @@ class PlayerBaselineModel:
             fallback_targets=artifact.get("fallback_targets", {}),
             trained_rows=artifact.get("trained_rows", 0),
             model_version=artifact.get("model_version", "player-baseline-v1"),
+            recency_halflife_days=artifact.get("recency_halflife_days"),
         )
 
     def save(self, artifact_path: Path) -> None:
@@ -131,6 +148,7 @@ class PlayerBaselineModel:
             "fallback_targets": self.fallback_targets,
             "trained_rows": self.trained_rows,
             "model_version": self.model_version,
+            "recency_halflife_days": self.recency_halflife_days,
         }, artifact_path)
 
     def predict(self, raw_features: dict[str, Any]) -> dict[str, Any]:
@@ -203,6 +221,37 @@ def training_row_sort_key(row: dict[str, Any]) -> tuple[str, str, str]:
 def example_time(example: dict[str, Any]) -> str | None:
     value = example["row"].get("gameDateTime")
     return str(value) if value is not None else None
+
+
+def example_datetime(example: dict[str, Any]) -> datetime | None:
+    value = example_time(example)
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed
+
+
+def sample_weights(examples: list[dict[str, Any]], recency_halflife_days: float | None) -> list[float] | None:
+    if recency_halflife_days is None or recency_halflife_days <= 0:
+        return None
+    times = [example_datetime(example) for example in examples]
+    known_times = [value for value in times if value is not None]
+    if not known_times:
+        return None
+    latest = max(known_times)
+    weights = []
+    for value in times:
+        if value is None:
+            weights.append(1.0)
+            continue
+        age_days = max((latest - value).total_seconds() / 86400, 0.0)
+        weights.append(max(0.05, 0.5 ** (age_days / recency_halflife_days)))
+    return weights
 
 
 def split_time_groups(examples: list[dict[str, Any]], train_ratio: float) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:

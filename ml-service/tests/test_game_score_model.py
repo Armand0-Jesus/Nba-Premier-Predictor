@@ -50,6 +50,19 @@ class GameScoreBaselineModelTests(unittest.TestCase):
         self.assertGreater(prediction["away_team_score"], 0)
         self.assertIn(prediction["predicted_winner_team_id"], [1610612744, 1610612747])
 
+    def test_fit_records_recency_weighting(self):
+        rows = [
+            training_row(100, 90, "2022-01-01T22:00:00"),
+            training_row(110, 105, "2023-01-03T22:00:00"),
+            training_row(130, 120, "2024-01-05T22:00:00"),
+        ]
+
+        model = GameScoreBaselineModel.fit(rows, recency_halflife_days=365)
+        evaluation = GameScoreBaselineModel.evaluate_time_split(rows, train_ratio=0.67, recency_halflife_days=365)
+
+        self.assertEqual(365, model.recency_halflife_days)
+        self.assertEqual(365, evaluation["recency_halflife_days"])
+
     def test_evaluate_time_split_reports_score_metrics(self):
         evaluation = GameScoreBaselineModel.evaluate_time_split([
             training_row(100, 90, "2024-01-01T22:00:00"),

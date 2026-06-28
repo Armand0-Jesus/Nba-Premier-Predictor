@@ -47,6 +47,19 @@ class PlayerBaselineModelTests(unittest.TestCase):
         self.assertGreater(prediction["confidence_score"], 0.45)
         self.assertTrue(prediction["factors"])
 
+    def test_fit_records_recency_weighting(self):
+        rows = [
+            training_row(10, 4, 3, 28, 19.3, "2022-10-01T19:00:00"),
+            training_row(20, 6, 5, 32, 36.7, "2023-10-01T19:00:00"),
+            training_row(24, 8, 7, 34, 44.1, "2024-10-01T19:00:00"),
+        ]
+
+        model = PlayerBaselineModel.fit(rows, recency_halflife_days=365)
+        evaluation = PlayerBaselineModel.evaluate_time_split(rows, train_ratio=0.67, recency_halflife_days=365)
+
+        self.assertEqual(365, model.recency_halflife_days)
+        self.assertEqual(365, evaluation["recency_halflife_days"])
+
     def test_age_and_career_context_features_are_used(self):
         clean = clean_features({
             "career_stage": "late_career",

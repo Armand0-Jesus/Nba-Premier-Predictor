@@ -6,7 +6,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -29,7 +29,9 @@ GAME_SCORE_METRICS_PATH = Path(os.getenv(
     str(GAME_SCORE_ARTIFACT_PATH.with_name("game_score_metrics.json")),
 ))
 BACKEND_PAGE_SIZE = 10000
-MAX_TRAINING_ROWS = 50000
+DEFAULT_TRAINING_ROWS = 100000
+MAX_TRAINING_ROWS = 500000
+DEFAULT_RECENCY_HALFLIFE_DAYS = 1095.0
 
 
 def load_json(path: Path) -> dict[str, Any] | None:
@@ -105,6 +107,10 @@ class TrainingResponse(BaseModel):
     model_version: str
     trained_rows: int
     artifact_path: str
+    season: int | None = None
+    start_season: int | None = None
+    end_season: int | None = None
+    recency_halflife_days: float | None = None
 
 
 class EvaluationResponse(BaseModel):
@@ -113,6 +119,7 @@ class EvaluationResponse(BaseModel):
     test_rows: int
     total_rows: int
     train_ratio: float
+    recency_halflife_days: float | None = None
     split_strategy: str | None = None
     train_groups: int | None = None
     test_groups: int | None = None
@@ -143,10 +150,14 @@ def health() -> dict[str, Any]:
 @app.post("/train/player-baseline", response_model=TrainingResponse)
 def train_player_baseline(
         season: int | None = None,
-        limit: int = Query(default=10000, ge=1, le=MAX_TRAINING_ROWS)) -> TrainingResponse:
-    rows = fetch_player_training_rows(season, limit)
+        start_season: Annotated[int | None, Query(alias="startSeason")] = None,
+        end_season: Annotated[int | None, Query(alias="endSeason")] = None,
+        limit: Annotated[int, Query(ge=1, le=MAX_TRAINING_ROWS)] = DEFAULT_TRAINING_ROWS,
+        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS) -> TrainingResponse:
+    validate_training_window(season, start_season, end_season)
+    rows = fetch_player_training_rows(season, limit, start_season, end_season)
     try:
-        model = PlayerBaselineModel.fit(rows)
+        model = PlayerBaselineModel.fit(rows, normalized_halflife(recency_halflife_days))
     except ValueError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
 
@@ -156,16 +167,24 @@ def train_player_baseline(
         model_version=model.model_version,
         trained_rows=model.trained_rows,
         artifact_path=str(MODEL_ARTIFACT_PATH),
+        season=season,
+        start_season=start_season,
+        end_season=end_season,
+        recency_halflife_days=model.recency_halflife_days,
     )
 
 
 @app.post("/train/game-score", response_model=TrainingResponse)
 def train_game_score_baseline(
         season: int | None = None,
-        limit: int = Query(default=10000, ge=1, le=MAX_TRAINING_ROWS)) -> TrainingResponse:
-    rows = fetch_game_score_training_rows(season, limit)
+        start_season: Annotated[int | None, Query(alias="startSeason")] = None,
+        end_season: Annotated[int | None, Query(alias="endSeason")] = None,
+        limit: Annotated[int, Query(ge=1, le=MAX_TRAINING_ROWS)] = DEFAULT_TRAINING_ROWS,
+        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS) -> TrainingResponse:
+    validate_training_window(season, start_season, end_season)
+    rows = fetch_game_score_training_rows(season, limit, start_season, end_season)
     try:
-        model = GameScoreBaselineModel.fit(rows)
+        model = GameScoreBaselineModel.fit(rows, normalized_halflife(recency_halflife_days))
     except ValueError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
 
@@ -175,17 +194,25 @@ def train_game_score_baseline(
         model_version=model.model_version,
         trained_rows=model.trained_rows,
         artifact_path=str(GAME_SCORE_ARTIFACT_PATH),
+        season=season,
+        start_season=start_season,
+        end_season=end_season,
+        recency_halflife_days=model.recency_halflife_days,
     )
 
 
 @app.post("/evaluate/player-baseline", response_model=EvaluationResponse)
 def evaluate_player_baseline(
         season: int | None = None,
-        limit: int = Query(default=10000, ge=2, le=MAX_TRAINING_ROWS),
-        train_ratio: float = Query(default=0.8, gt=0, lt=1)) -> EvaluationResponse:
-    rows = fetch_player_training_rows(season, limit)
+        start_season: Annotated[int | None, Query(alias="startSeason")] = None,
+        end_season: Annotated[int | None, Query(alias="endSeason")] = None,
+        limit: Annotated[int, Query(ge=2, le=MAX_TRAINING_ROWS)] = DEFAULT_TRAINING_ROWS,
+        train_ratio: Annotated[float, Query(gt=0, lt=1)] = 0.8,
+        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS) -> EvaluationResponse:
+    validate_training_window(season, start_season, end_season)
+    rows = fetch_player_training_rows(season, limit, start_season, end_season)
     try:
-        metrics = PlayerBaselineModel.evaluate_time_split(rows, train_ratio)
+        metrics = PlayerBaselineModel.evaluate_time_split(rows, train_ratio, normalized_halflife(recency_halflife_days))
     except ValueError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
 
@@ -197,17 +224,51 @@ def evaluate_player_baseline(
 @app.post("/evaluate/game-score", response_model=EvaluationResponse)
 def evaluate_game_score_baseline(
         season: int | None = None,
-        limit: int = Query(default=10000, ge=2, le=MAX_TRAINING_ROWS),
-        train_ratio: float = Query(default=0.8, gt=0, lt=1)) -> EvaluationResponse:
-    rows = fetch_game_score_training_rows(season, limit)
+        start_season: Annotated[int | None, Query(alias="startSeason")] = None,
+        end_season: Annotated[int | None, Query(alias="endSeason")] = None,
+        limit: Annotated[int, Query(ge=2, le=MAX_TRAINING_ROWS)] = DEFAULT_TRAINING_ROWS,
+        train_ratio: Annotated[float, Query(gt=0, lt=1)] = 0.8,
+        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS) -> EvaluationResponse:
+    validate_training_window(season, start_season, end_season)
+    rows = fetch_game_score_training_rows(season, limit, start_season, end_season)
     try:
-        metrics = GameScoreBaselineModel.evaluate_time_split(rows, train_ratio)
+        metrics = GameScoreBaselineModel.evaluate_time_split(rows, train_ratio, normalized_halflife(recency_halflife_days))
     except ValueError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
 
     app.state.game_score_metrics = metrics
     save_json(GAME_SCORE_METRICS_PATH, metrics)
     return EvaluationResponse(**metrics)
+
+
+@app.post("/evaluate/player-baseline/windows")
+def evaluate_player_baseline_windows(
+        windows: Annotated[str, Query()] = "2014:2025,2019:2025,2021:2025",
+        limit: Annotated[int, Query(ge=2, le=MAX_TRAINING_ROWS)] = DEFAULT_TRAINING_ROWS,
+        train_ratio: Annotated[float, Query(gt=0, lt=1)] = 0.8,
+        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS) -> dict[str, Any]:
+    return evaluate_windows(
+        "player",
+        parse_windows(windows),
+        limit,
+        train_ratio,
+        normalized_halflife(recency_halflife_days),
+    )
+
+
+@app.post("/evaluate/game-score/windows")
+def evaluate_game_score_windows(
+        windows: Annotated[str, Query()] = "2014:2025,2019:2025,2021:2025",
+        limit: Annotated[int, Query(ge=2, le=MAX_TRAINING_ROWS)] = DEFAULT_TRAINING_ROWS,
+        train_ratio: Annotated[float, Query(gt=0, lt=1)] = 0.8,
+        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS) -> dict[str, Any]:
+    return evaluate_windows(
+        "gameScore",
+        parse_windows(windows),
+        limit,
+        train_ratio,
+        normalized_halflife(recency_halflife_days),
+    )
 
 
 @app.post("/predict/player", response_model=PlayerPredictionResponse)
@@ -275,6 +336,7 @@ def model_versions() -> dict[str, Any]:
             ],
             "trainedRows": model.trained_rows,
             "artifactPath": str(MODEL_ARTIFACT_PATH),
+            "recencyHalflifeDays": model.recency_halflife_days,
         },
         "gameScoreModel": {
             "versionName": game_score_model.model_version,
@@ -285,17 +347,116 @@ def model_versions() -> dict[str, Any]:
             ],
             "trainedRows": game_score_model.trained_rows,
             "artifactPath": str(GAME_SCORE_ARTIFACT_PATH),
+            "recencyHalflifeDays": game_score_model.recency_halflife_days,
         }
     }
 
 
-def fetch_player_training_rows(season: int | None, limit: int) -> list[dict[str, Any]]:
+def validate_training_window(season: int | None, start_season: int | None, end_season: int | None) -> None:
+    if season is not None and (start_season is not None or end_season is not None):
+        raise HTTPException(status_code=400, detail="Use either season or startSeason/endSeason, not both")
+    if start_season is not None and end_season is not None and start_season > end_season:
+        raise HTTPException(status_code=400, detail="startSeason must be before or equal to endSeason")
+
+
+def normalized_halflife(value: float | None) -> float | None:
+    return None if value is None or value <= 0 else value
+
+
+def parse_windows(raw_windows: str) -> list[tuple[int, int]]:
+    windows: list[tuple[int, int]] = []
+    for raw_window in raw_windows.split(","):
+        value = raw_window.strip()
+        if not value:
+            continue
+        separator = ":" if ":" in value else "-"
+        parts = value.split(separator, 1)
+        if len(parts) != 2:
+            raise HTTPException(status_code=400, detail=f"Invalid window '{value}'")
+        try:
+            start_season = int(parts[0].strip())
+            end_season = int(parts[1].strip())
+        except ValueError as ex:
+            raise HTTPException(status_code=400, detail=f"Invalid window '{value}'") from ex
+        if start_season > end_season:
+            raise HTTPException(status_code=400, detail=f"Invalid window '{value}'")
+        windows.append((start_season, end_season))
+    if not windows:
+        raise HTTPException(status_code=400, detail="At least one window is required")
+    return windows
+
+
+def evaluate_windows(
+        model_type: str,
+        windows: list[tuple[int, int]],
+        limit: int,
+        train_ratio: float,
+        recency_halflife_days: float | None) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    for start_season, end_season in windows:
+        try:
+            if model_type == "player":
+                rows = fetch_player_training_rows(None, limit, start_season, end_season)
+                metrics = PlayerBaselineModel.evaluate_time_split(rows, train_ratio, recency_halflife_days)
+            else:
+                rows = fetch_game_score_training_rows(None, limit, start_season, end_season)
+                metrics = GameScoreBaselineModel.evaluate_time_split(rows, train_ratio, recency_halflife_days)
+            results.append({
+                "label": season_window_label(start_season, end_season),
+                "startSeason": start_season,
+                "endSeason": end_season,
+                "primaryScore": primary_score(metrics),
+                "metrics": metrics,
+            })
+        except (HTTPException, ValueError) as ex:
+            detail = ex.detail if isinstance(ex, HTTPException) else str(ex)
+            results.append({
+                "label": season_window_label(start_season, end_season),
+                "startSeason": start_season,
+                "endSeason": end_season,
+                "error": detail,
+            })
+
+    successful = [result for result in results if "primaryScore" in result]
+    if not successful:
+        raise HTTPException(status_code=400, detail="No evaluation windows had enough training data")
+    best_window = min(successful, key=lambda result: result["primaryScore"])
+    return {
+        "modelType": model_type,
+        "limit": limit,
+        "trainRatio": train_ratio,
+        "recencyHalflifeDays": recency_halflife_days,
+        "windows": results,
+        "bestWindow": best_window,
+    }
+
+
+def season_window_label(start_season: int, end_season: int) -> str:
+    return f"{start_season}-{start_season + 1} to {end_season}-{end_season + 1}"
+
+
+def primary_score(metrics: dict[str, Any]) -> float:
+    maes = [
+        values["mae"]
+        for values in metrics.get("metrics", {}).values()
+        if isinstance(values, dict) and "mae" in values
+    ]
+    if not maes:
+        return 999999.0
+    return round(sum(maes) / len(maes), 4)
+
+
+def fetch_player_training_rows(
+        season: int | None,
+        limit: int,
+        start_season: int | None = None,
+        end_season: int | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     offset = 0
     remaining = limit
     while remaining > 0:
         page_limit = min(remaining, BACKEND_PAGE_SIZE)
-        page = fetch_player_training_page(season, page_limit, offset)
+        page = fetch_player_training_page(season, page_limit, offset, start_season, end_season)
         rows.extend(page)
         if len(page) < page_limit:
             break
@@ -304,13 +465,17 @@ def fetch_player_training_rows(season: int | None, limit: int) -> list[dict[str,
     return rows
 
 
-def fetch_game_score_training_rows(season: int | None, limit: int) -> list[dict[str, Any]]:
+def fetch_game_score_training_rows(
+        season: int | None,
+        limit: int,
+        start_season: int | None = None,
+        end_season: int | None = None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     offset = 0
     remaining = limit
     while remaining > 0:
         page_limit = min(remaining, BACKEND_PAGE_SIZE)
-        page = fetch_game_score_training_page(season, page_limit, offset)
+        page = fetch_game_score_training_page(season, page_limit, offset, start_season, end_season)
         rows.extend(page)
         if len(page) < page_limit:
             break
@@ -319,10 +484,19 @@ def fetch_game_score_training_rows(season: int | None, limit: int) -> list[dict[
     return rows
 
 
-def fetch_player_training_page(season: int | None, limit: int, offset: int) -> list[dict[str, Any]]:
+def fetch_player_training_page(
+        season: int | None,
+        limit: int,
+        offset: int,
+        start_season: int | None = None,
+        end_season: int | None = None) -> list[dict[str, Any]]:
     params: dict[str, Any] = {"limit": limit, "offset": offset}
     if season is not None:
         params["season"] = season
+    if start_season is not None:
+        params["startSeason"] = start_season
+    if end_season is not None:
+        params["endSeason"] = end_season
     url = f"{BACKEND_API_URL}/api/training-data/player-stats?{urllib.parse.urlencode(params)}"
 
     try:
@@ -339,10 +513,19 @@ def fetch_player_training_page(season: int | None, limit: int, offset: int) -> l
     return data
 
 
-def fetch_game_score_training_page(season: int | None, limit: int, offset: int) -> list[dict[str, Any]]:
+def fetch_game_score_training_page(
+        season: int | None,
+        limit: int,
+        offset: int,
+        start_season: int | None = None,
+        end_season: int | None = None) -> list[dict[str, Any]]:
     params: dict[str, Any] = {"limit": limit, "offset": offset}
     if season is not None:
         params["season"] = season
+    if start_season is not None:
+        params["startSeason"] = start_season
+    if end_season is not None:
+        params["endSeason"] = end_season
     url = f"{BACKEND_API_URL}/api/training-data/game-scores?{urllib.parse.urlencode(params)}"
 
     try:
@@ -364,5 +547,5 @@ def model_health(model: PlayerBaselineModel | GameScoreBaselineModel) -> dict[st
         "status": "trained" if model.trained_rows > 0 else "untrained",
         "modelVersion": model.model_version,
         "trainedRows": model.trained_rows,
+        "recencyHalflifeDays": model.recency_halflife_days,
     }
-
