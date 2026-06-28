@@ -36,7 +36,7 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.getByRole('heading', { name: /NBA Premier Predictor/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Make a Pick/i })).toHaveAttribute('href', '/predict/player');
     expect(screen.getByRole('link', { name: /Browse Players/i })).toHaveAttribute('href', '/players');
-    expect(screen.getByText(/Pick a player, choose a matchup/i)).toBeInTheDocument();
+    expect(screen.getByText(/Make game or player predictions/i)).toBeInTheDocument();
     expect(screen.getByAltText(/Larry Bird and Magic Johnson/i)).toBeInTheDocument();
     expect(screen.getByAltText(/Kobe Bryant and Michael Jordan/i)).toBeInTheDocument();
     expect(screen.getByAltText(/LeBron James and Dwyane Wade/i)).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe('NBA Premier Predictor frontend', () => {
     await user.type(screen.getByLabelText(/Search by player name/i), 'Michael');
 
     expect(await screen.findByText('Michael Jordan')).toBeInTheDocument();
-    expect(screen.getByText('2002-2003')).toBeInTheDocument();
+    expect(screen.getByText('2002-03')).toBeInTheDocument();
     expect(screen.queryByText('Active')).not.toBeInTheDocument();
   });
 
@@ -119,6 +119,9 @@ describe('NBA Premier Predictor frontend', () => {
     expect(await screen.findByText('Expected Stat Line')).toBeInTheDocument();
     expect(screen.getByText('28')).toBeInTheDocument();
     expect(screen.getByText('50%')).toBeInTheDocument();
+    expect(screen.getByText('Steals')).toBeInTheDocument();
+    expect(screen.getByText('Blocks')).toBeInTheDocument();
+    expect(screen.getByText('Turnovers')).toBeInTheDocument();
     expect(screen.queryByText('Fantasy Points')).not.toBeInTheDocument();
     expect(screen.queryByText('Confidence')).not.toBeInTheDocument();
     expect(screen.queryByText('How this was calculated')).not.toBeInTheDocument();
@@ -156,7 +159,8 @@ describe('NBA Premier Predictor frontend', () => {
 
     expect(await screen.findByText('Projected Score')).toBeInTheDocument();
     expect(screen.getAllByText('Golden State Warriors').length).toBeGreaterThan(0);
-    expect(screen.getByText('63%')).toBeInTheDocument();
+    expect(screen.getByText('By 3')).toBeInTheDocument();
+    expect(screen.getByText('203')).toBeInTheDocument();
     expect(window.fetch).toHaveBeenCalledWith('/api/predictions/game-score', expect.objectContaining({ method: 'POST' }));
   });
 
@@ -306,7 +310,7 @@ function defaultFetch(path, options = {}) {
   if (path === '/api/predictions/player' && options.method === 'POST') {
     return jsonResponse({
       predictionId: 9,
-      modelVersion: 'player-baseline-v1',
+      modelVersion: 'player-baseline-v2',
       trainedRows: 100,
       gameId: 12300001,
       playerId: 201939,
@@ -315,6 +319,12 @@ function defaultFetch(path, options = {}) {
       projectedRebounds: 5.1,
       projectedAssists: 6.9,
       projectedMinutes: 34.2,
+      projectedSteals: 1.9,
+      projectedBlocks: 0.4,
+      projectedTurnovers: 3.1,
+      projectedFieldGoalsMade: 10.3,
+      projectedFieldGoalsAttempted: 20.6,
+      projectedFieldGoalPercentage: 0.5,
       fantasyPoints: 44.8,
       fantasyFloor: 35.1,
       fantasyCeiling: 54.3,
@@ -327,7 +337,7 @@ function defaultFetch(path, options = {}) {
   if (path === '/api/predictions/fantasy' && options.method === 'POST') {
     return jsonResponse({
       predictionId: 11,
-      modelVersion: 'player-baseline-v1',
+      modelVersion: 'player-baseline-v2',
       trainedRows: 100,
       gameId: 12300001,
       playerId: 201939,
@@ -336,6 +346,12 @@ function defaultFetch(path, options = {}) {
       projectedRebounds: 5.1,
       projectedAssists: 6.9,
       projectedMinutes: 34.2,
+      projectedSteals: 1.9,
+      projectedBlocks: 0.4,
+      projectedTurnovers: 3.1,
+      projectedFieldGoalsMade: 10.3,
+      projectedFieldGoalsAttempted: 20.6,
+      projectedFieldGoalPercentage: 0.5,
       fantasyPoints: 44.8,
       fantasyFloor: 35.1,
       fantasyCeiling: 54.3,
@@ -436,10 +452,10 @@ function defaultFetch(path, options = {}) {
       gameId: 12300001,
       homeTeamId: 1610612744,
       awayTeamId: 1610612747,
-      homeTeamScore: 112.8,
-      awayTeamScore: 108.1,
+      homeTeamScore: 103.4,
+      awayTeamScore: 99.6,
       predictedWinnerTeamId: 1610612744,
-      pointDifferential: 4.7,
+      pointDifferential: 3.8,
       confidenceScore: 0.63,
       factors: [],
     });
@@ -507,7 +523,7 @@ function defaultFetch(path, options = {}) {
 
   if (path === '/api/model/metrics') {
     return jsonResponse({
-      modelVersion: 'player-baseline-v1',
+      modelVersion: 'player-baseline-v2',
       trainedRows: 6000,
       playerBaseline: {
         metrics: {
@@ -548,7 +564,7 @@ function defaultFetch(path, options = {}) {
 
   if (path === '/api/model/versions') {
     return jsonResponse({
-      activeModel: { versionName: 'player-baseline-v1' },
+      activeModel: { versionName: 'player-baseline-v2' },
       gameScoreModel: { versionName: 'game-score-baseline-v1' },
     });
   }

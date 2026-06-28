@@ -13,12 +13,19 @@ from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 
 
+MODEL_VERSION = "player-baseline-v2"
+
 TARGETS = (
     ("projected_points", "points"),
     ("projected_rebounds", "rebounds"),
     ("projected_assists", "assists"),
     ("projected_minutes", "minutes"),
+    ("projected_steals", "steals"),
+    ("projected_blocks", "blocks"),
+    ("projected_turnovers", "turnovers"),
     ("fantasy_points", "fantasyPoints"),
+    ("projected_field_goals_made", "fieldGoalsMade"),
+    ("projected_field_goals_attempted", "fieldGoalsAttempted"),
 )
 
 HIT_THRESHOLDS = {
@@ -26,7 +33,12 @@ HIT_THRESHOLDS = {
     "projected_rebounds": 2,
     "projected_assists": 2,
     "projected_minutes": 5,
+    "projected_steals": 1,
+    "projected_blocks": 1,
+    "projected_turnovers": 2,
     "fantasy_points": 8,
+    "projected_field_goals_made": 3,
+    "projected_field_goals_attempted": 5,
 }
 
 
@@ -35,7 +47,7 @@ class PlayerBaselineModel:
     pipeline: Pipeline | None = None
     fallback_targets: dict[str, float] = field(default_factory=dict)
     trained_rows: int = 0
-    model_version: str = "player-baseline-v1"
+    model_version: str = MODEL_VERSION
     recency_halflife_days: float | None = None
 
     @classmethod
@@ -133,11 +145,13 @@ class PlayerBaselineModel:
         if not artifact_path.exists():
             return cls()
         artifact = joblib.load(artifact_path)
+        if artifact.get("model_version") != MODEL_VERSION:
+            return cls()
         return cls(
             pipeline=artifact.get("pipeline"),
             fallback_targets=artifact.get("fallback_targets", {}),
             trained_rows=artifact.get("trained_rows", 0),
-            model_version=artifact.get("model_version", "player-baseline-v1"),
+            model_version=artifact.get("model_version", MODEL_VERSION),
             recency_halflife_days=artifact.get("recency_halflife_days"),
         )
 
@@ -162,6 +176,7 @@ class PlayerBaselineModel:
                 for index, (output_name, _) in enumerate(TARGETS)
             }
 
+        predictions = normalize_prediction(predictions)
         predictions["fantasy_floor"] = clamp_round(predictions["fantasy_points"] * 0.85)
         predictions["fantasy_ceiling"] = clamp_round(predictions["fantasy_points"] * 1.15)
         predictions["risk_level"] = risk_level(features)
@@ -174,13 +189,23 @@ class PlayerBaselineModel:
         rebounds = feature_average(features, "rebounds", self.fallback_targets.get("projected_rebounds", 0.0))
         assists = feature_average(features, "assists", self.fallback_targets.get("projected_assists", 0.0))
         minutes = feature_average(features, "minutes", self.fallback_targets.get("projected_minutes", 0.0))
-        fantasy = points + (1.2 * rebounds) + (1.5 * assists)
+        steals = feature_average(features, "steals", self.fallback_targets.get("projected_steals", 0.0))
+        blocks = feature_average(features, "blocks", self.fallback_targets.get("projected_blocks", 0.0))
+        turnovers = feature_average(features, "turnovers", self.fallback_targets.get("projected_turnovers", 0.0))
+        field_goals_made = feature_average(features, "field_goals_made", self.fallback_targets.get("projected_field_goals_made", 0.0))
+        field_goals_attempted = feature_average(features, "field_goals_attempted", self.fallback_targets.get("projected_field_goals_attempted", 0.0))
+        fantasy = points + (1.2 * rebounds) + (1.5 * assists) + (3.0 * steals) + (3.0 * blocks) - turnovers
         return {
             "projected_points": clamp_round(points),
             "projected_rebounds": clamp_round(rebounds),
             "projected_assists": clamp_round(assists),
             "projected_minutes": clamp_round(minutes),
+            "projected_steals": clamp_round(steals),
+            "projected_blocks": clamp_round(blocks),
+            "projected_turnovers": clamp_round(turnovers),
             "fantasy_points": clamp_round(fantasy),
+            "projected_field_goals_made": clamp_round(field_goals_made),
+            "projected_field_goals_attempted": clamp_round(field_goals_attempted),
         }
 
 
@@ -208,6 +233,16 @@ def complete_training_examples(rows: list[dict[str, Any]]) -> list[dict[str, Any
             "row": row,
         })
     return examples
+
+
+def normalize_prediction(predictions: dict[str, float]) -> dict[str, float]:
+    normalized = {key: clamp_round(value) for key, value in predictions.items()}
+    made = normalized.get("projected_field_goals_made", 0.0)
+    attempted = max(normalized.get("projected_field_goals_attempted", 0.0), made)
+    normalized["projected_field_goals_made"] = made
+    normalized["projected_field_goals_attempted"] = attempted
+    normalized["projected_field_goal_percentage"] = clamp_round(made / attempted) if attempted > 0 else 0.0
+    return normalized
 
 
 def training_row_sort_key(row: dict[str, Any]) -> tuple[str, str, str]:

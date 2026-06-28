@@ -21,16 +21,46 @@ class GameScoreBaselineModelTests(unittest.TestCase):
         self.assertEqual(6.0, prediction["point_differential"])
         self.assertGreater(prediction["confidence_score"], 0)
 
-    def test_exact_tie_does_not_choose_home_team(self):
+    def test_exact_tie_returns_legal_score_without_home_bias(self):
         prediction = GameScoreBaselineModel().predict({
             "home_last_5_team_score_avg": 108.0,
             "away_last_5_team_score_avg": 108.0,
         }, 1610612744, 1610612747)
 
         self.assertEqual(108.0, prediction["home_team_score"])
-        self.assertEqual(108.0, prediction["away_team_score"])
-        self.assertEqual(0.0, prediction["point_differential"])
-        self.assertIsNone(prediction["predicted_winner_team_id"])
+        self.assertEqual(109.0, prediction["away_team_score"])
+        self.assertEqual(-1.0, prediction["point_differential"])
+        self.assertEqual(1610612747, prediction["predicted_winner_team_id"])
+
+    def test_rounded_tie_uses_raw_margin_and_recomputes_differential(self):
+        prediction = GameScoreBaselineModel().predict({
+            "home_last_5_team_score_avg": 103.2,
+            "away_last_5_team_score_avg": 103.3,
+        }, 1610612744, 1610612747)
+
+        self.assertEqual(103.0, prediction["home_team_score"])
+        self.assertEqual(104.0, prediction["away_team_score"])
+        self.assertEqual(
+            prediction["home_team_score"] - prediction["away_team_score"],
+            prediction["point_differential"],
+        )
+        self.assertEqual(1610612747, prediction["predicted_winner_team_id"])
+
+    def test_implausible_model_scores_fall_back_to_team_averages(self):
+        model = GameScoreBaselineModel(
+            pipeline=HugeScorePipeline(),
+            fallback_targets={"home_team_score": 110.0, "away_team_score": 108.0},
+            trained_rows=20,
+        )
+
+        prediction = model.predict({
+            "home_last_5_team_score_avg": 108.0,
+            "away_last_5_team_score_avg": 108.0,
+        }, 1610612744, 1610612747)
+
+        self.assertEqual(108.0, prediction["home_team_score"])
+        self.assertEqual(109.0, prediction["away_team_score"])
+        self.assertEqual(-1.0, prediction["point_differential"])
 
     def test_fit_trains_game_score_model(self):
         model = GameScoreBaselineModel.fit([
@@ -96,6 +126,11 @@ class GameScoreBaselineModelTests(unittest.TestCase):
         self.assertEqual(1, evaluation["test_groups"])
         self.assertEqual("2024-01-01T22:00:00", evaluation["training_data_end"])
         self.assertEqual("2024-01-05T22:00:00", evaluation["validation_data_start"])
+
+
+class HugeScorePipeline:
+    def predict(self, rows):
+        return [[36013326.0, 43831202.0]]
 
 
 def training_row(home_score, away_score, game_time):

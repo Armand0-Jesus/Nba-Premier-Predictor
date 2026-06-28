@@ -197,6 +197,10 @@ class MainEndpointTests(unittest.TestCase):
         self.assertEqual(201939, body["player_id"])
         self.assertEqual(3, body["trained_rows"])
         self.assertGreater(body["projected_points"], 0)
+        self.assertIn("projected_steals", body)
+        self.assertIn("projected_blocks", body)
+        self.assertIn("projected_turnovers", body)
+        self.assertIn("projected_field_goal_percentage", body)
         self.assertGreater(body["fantasy_points"], body["projected_points"])
 
     def test_predict_fantasy_accepts_same_request_format(self):
@@ -233,6 +237,8 @@ class MainEndpointTests(unittest.TestCase):
         self.assertEqual(1610612747, body["away_team_id"])
         self.assertGreater(body["home_team_score"], 0)
         self.assertGreater(body["away_team_score"], 0)
+        self.assertNotEqual(body["home_team_score"], body["away_team_score"])
+        self.assertEqual(body["home_team_score"] - body["away_team_score"], body["point_differential"])
         self.assertIn(body["predicted_winner_team_id"], [1610612744, 1610612747])
 
     def test_prediction_request_requires_player_id_and_features(self):
@@ -429,6 +435,8 @@ def game_score_prediction_request():
 
 
 def training_row(points, rebounds, assists, minutes, fantasy_points, game_time=None):
+    field_goals_made = max(1, round(points / 2))
+    field_goals_attempted = max(field_goals_made, round(points))
     return {
         "gameDateTime": game_time,
         "features": {
@@ -438,11 +446,21 @@ def training_row(points, rebounds, assists, minutes, fantasy_points, game_time=N
             "last_5_rebounds_avg": float(rebounds),
             "last_5_assists_avg": float(assists),
             "last_5_minutes_avg": float(minutes),
+            "last_5_steals_avg": 1.0,
+            "last_5_blocks_avg": 0.5,
+            "last_5_turnovers_avg": 2.0,
+            "last_5_field_goals_made_avg": float(field_goals_made),
+            "last_5_field_goals_attempted_avg": float(field_goals_attempted),
         },
         "targets": {
             "points": points,
             "rebounds": rebounds,
             "assists": assists,
+            "steals": 1,
+            "blocks": 0,
+            "turnovers": 2,
+            "fieldGoalsMade": field_goals_made,
+            "fieldGoalsAttempted": field_goals_attempted,
             "minutes": minutes,
             "fantasyPoints": fantasy_points,
         },

@@ -73,6 +73,12 @@ class PlayerPredictionResponse(BaseModel):
     projected_rebounds: float
     projected_assists: float
     projected_minutes: float
+    projected_steals: float
+    projected_blocks: float
+    projected_turnovers: float
+    projected_field_goals_made: float
+    projected_field_goals_attempted: float
+    projected_field_goal_percentage: float
     fantasy_points: float
     fantasy_floor: float
     fantasy_ceiling: float
@@ -332,7 +338,12 @@ def model_versions() -> dict[str, Any]:
                 "rebounds",
                 "assists",
                 "minutes",
+                "steals",
+                "blocks",
+                "turnovers",
                 "fantasyPoints",
+                "fieldGoalsMade",
+                "fieldGoalsAttempted",
             ],
             "trainedRows": model.trained_rows,
             "artifactPath": str(MODEL_ARTIFACT_PATH),

@@ -98,7 +98,7 @@ function Landing() {
           <h1>NBA Premier Predictor</h1>
         </div>
         <div className="hero-copy">
-          <p>Pick a player, choose a matchup and see the projection in basketball language.</p>
+          <p>Make game or player predictions, see future season predictions or explore and find whatever historic data you want!</p>
           <div className="hero-actions">
             <IconLink to="/predict/player" icon={Target}>Make a Pick</IconLink>
             <IconLink to="/players" icon={Users} variant="ghost">
@@ -164,7 +164,7 @@ function PlayersPage() {
       columns={[
         ['fullName', 'Player', (_, row) => <PlayerIdentity player={row} />],
         ['position', 'Role', readablePosition],
-        ['fromYear', 'From'],
+        ['fromYear', 'From', playerStartYear],
         ['toYear', 'Through', playerEndYear],
       ]}
       rowLink={(row) => `/players/${row.id}`}
@@ -183,7 +183,7 @@ function TeamsPage() {
         ['fullName', 'Team', (_, row) => <TeamIdentity team={row} />],
         ['abbreviation', 'Abbr'],
         ['seasonFounded', 'Founded'],
-        ['seasonActiveTill', 'Through', teamEndYear],
+        ['championshipYears', 'Championships', championshipText],
       ]}
       rowLink={(row) => `/teams/${row.id}`}
     />
@@ -209,7 +209,7 @@ function GamesPage() {
   const rows = pageItems(result.data);
 
   return (
-    <Page title="Games" eyebrow="schedule">
+    <Page title="Games" eyebrow="browse">
       <section className="panel">
         <div className="toolbar">
           <Field label="Season">
@@ -289,9 +289,9 @@ function PlayerDetailPage() {
             </div>
           </section>
           <div className="dashboard-grid">
-            <StatusPanel title="Role" value={readablePosition(data.player.position)} icon={Users} />
-            <StatusPanel title="Season Points" value={compactNumber(data.averages?.points)} icon={Target} />
-            <StatusPanel title="Season Minutes" value={compactNumber(data.averages?.minutes)} icon={Gauge} />
+            <StatusPanel title="Team" value={seasonTeamText(data.seasonTeams)} icon={Users} />
+            <StatusPanel title="Season Points Per Game" value={compactNumber(data.averages?.points)} icon={Target} />
+            <StatusPanel title="Season Minutes Per Game" value={compactNumber(data.averages?.minutes)} icon={Gauge} />
           </div>
           <section className="panel panel-wide">
             <PanelHeader title="Recent Scoring" icon={BarChart3} />
@@ -376,7 +376,7 @@ function TeamDetailPage() {
           <div className="dashboard-grid">
             <StatusPanel title="Record" value={teamRecordText(data.regularSeasonRecord)} subvalue={seasonLabel(season)} icon={Trophy} />
             <StatusPanel title="Win Rate" value={teamWinRateText(data.regularSeasonRecord)} subvalue="Regular season" icon={Gauge} />
-            <StatusPanel title="Founded" value={data.team.seasonFounded || 'Year not listed'} icon={CalendarDays} />
+            <StatusPanel title="Conference" value={data.team.conference || 'Conference not listed'} icon={CalendarDays} />
           </div>
           <section className="panel panel-wide">
             <PanelHeader title="Recent Team Scores" icon={BarChart3} />
@@ -464,6 +464,9 @@ function GameDetailPage() {
               columns={[
                 ['teamName', 'Team'],
                 ['teamScore', 'PTS', statCell],
+                ['fieldGoalsMade', 'FGM', statCell],
+                ['fieldGoalsAttempted', 'FGA', statCell],
+                ['fieldGoalPercentage', 'FG%', fieldGoalText],
                 ['rebounds', 'REB', statCell],
                 ['assists', 'AST', statCell],
                 ['steals', 'STL', statCell],
@@ -612,7 +615,7 @@ function PlayerPredictionPage({ mode }) {
           selectedId={selectedPlayer?.id}
           getId={(row) => row.id}
           getTitle={(row) => cleanName(row.fullName) || 'Player not listed'}
-          getMeta={(row) => `${readablePosition(row.position)} - ${playerEndYear(row.toYear, row)}`}
+          getMeta={(row) => `${readablePosition(row.position)} - ${careerRangeText(row)}`}
           getImage={(row) => playerHeadshotUrl(row.id)}
           onChoose={choosePlayer}
         />
@@ -786,7 +789,7 @@ function ModelPage() {
   }, [metrics.data, evaluationStarted]);
 
   return (
-    <Page title="Accuracy" eyebrow="how close it has been">
+    <Page title="Accuracy" eyebrow="for those who like numbers">
       <ErrorBanner message={metrics.error || evaluationError} />
       {!hasAccuracyMetrics(displayMetrics) && !evaluationError && (
         <section className="panel">
@@ -872,7 +875,7 @@ function EntityList({
           columns={columns}
           action={(row) => (
             <Link to={rowLink(row)} className="mini-link">
-              Open
+              View
             </Link>
           )}
           empty={!path ? emptyBeforeSearch : result.error || 'No rows found'}
@@ -996,8 +999,11 @@ function PredictionResult({ prediction, game, fantasy }) {
         <MetricTile label="Points" value={scoreNumber(prediction.projectedPoints)} />
         <MetricTile label="Rebounds" value={scoreNumber(prediction.projectedRebounds)} />
         <MetricTile label="Assists" value={scoreNumber(prediction.projectedAssists)} />
+        <MetricTile label="Steals" value={scoreNumber(prediction.projectedSteals)} />
+        <MetricTile label="Blocks" value={scoreNumber(prediction.projectedBlocks)} />
+        <MetricTile label="Turnovers" value={scoreNumber(prediction.projectedTurnovers)} />
         <MetricTile label="Minutes" value={scoreNumber(prediction.projectedMinutes)} />
-        <MetricTile label="FG%" value={fieldGoalText(game?.fieldGoalPercentage)} />
+        <MetricTile label="FG%" value={fieldGoalText(prediction.projectedFieldGoalPercentage)} />
       </div>
       {actualStatLine && (
         <div className="result-band">
@@ -1012,30 +1018,31 @@ function PredictionResult({ prediction, game, fantasy }) {
 
 function GameScoreResult({ prediction, game }) {
   if (!prediction) return null;
-  const favorite = favoriteName(prediction, game);
+  const projected = legalProjectedScore(prediction);
+  const favorite = favoriteName({ ...prediction, predictedWinnerTeamId: projected.predictedWinnerTeamId }, game);
   return (
     <section className="panel panel-wide result-panel">
       <PanelHeader title="Projected Score" icon={Trophy} />
       <div className="scoreboard">
         <div>
           <span>{game?.homeTeamName || 'Home'}</span>
-          <strong>{scoreNumber(prediction.homeTeamScore)}</strong>
+          <strong>{scoreNumber(projected.homeTeamScore)}</strong>
           <em>Home</em>
         </div>
         <div>
           <span>{game?.awayTeamName || 'Away'}</span>
-          <strong>{scoreNumber(prediction.awayTeamScore)}</strong>
+          <strong>{scoreNumber(projected.awayTeamScore)}</strong>
           <em>Away</em>
         </div>
         <div>
           <span>Favored Team</span>
           <strong>{favorite}</strong>
-          <em>By {scoreNumber(Math.abs(prediction.pointDifferential))}</em>
+          <em>By {scoreNumber(projected.margin)}</em>
         </div>
         <div>
-          <span>Confidence</span>
-          <strong>{percent(prediction.confidenceScore)}</strong>
-          <em>Not a betting probability</em>
+          <span>Projected Total</span>
+          <strong>{scoreNumber(projected.homeTeamScore + projected.awayTeamScore)}</strong>
+          <em>Combined points</em>
         </div>
       </div>
       {game && game.homeScore !== null && game.homeScore !== undefined && game.awayScore !== null && game.awayScore !== undefined && (
@@ -1067,6 +1074,7 @@ function GameLogTable({ rows }) {
         columns={[
           ['gameDateTimeEst', 'Date', formatShortDate],
           ['opponentTeamName', 'Opponent'],
+          ['recordAfterGame', 'Record', formatCell],
           ['win', 'Result', resultText],
           ['teamScore', 'Score', (_, row) => teamScoreText(row)],
           ['points', 'PTS', statCell],
@@ -1119,7 +1127,7 @@ function PlayerBoxScoreTable({ rows }) {
       rows={rows}
       columns={[
         ['playerName', 'Player'],
-        ['startingPosition', 'Role', readablePosition],
+        ['startingPosition', 'Role', boxScorePosition],
         ['minutes', 'MIN', statCell],
         ['points', 'PTS', statCell],
         ['rebounds', 'REB', statCell],
@@ -1127,6 +1135,9 @@ function PlayerBoxScoreTable({ rows }) {
         ['steals', 'STL', statCell],
         ['blocks', 'BLK', statCell],
         ['turnovers', 'TO', statCell],
+        ['fieldGoalsMade', 'FGM', statCell],
+        ['fieldGoalsAttempted', 'FGA', statCell],
+        ['fieldGoalPercentage', 'FG%', fieldGoalText],
         ['plusMinus', '+/-', plusMinusText],
       ]}
       empty="Player stats are not available"
@@ -1265,7 +1276,7 @@ function StatusPanel({ title, value, subvalue, error, icon: Icon }) {
     <section className={`panel status-panel ${error ? 'panel-error' : ''}`}>
       <PanelHeader title={title} icon={Icon} />
       <strong>{error ? 'Needs attention' : value || 'Not listed'}</strong>
-      <span>{error || subvalue || 'Open'}</span>
+      {(error || subvalue) && <span>{error || subvalue}</span>}
     </section>
   );
 }
@@ -1423,23 +1434,47 @@ function seasonLabel(value) {
   return Number.isFinite(start) ? `${start}-${start + 1}` : 'Season not listed';
 }
 
+function compactSeasonLabel(value) {
+  if (value === null || value === undefined || value === '') return 'Season not listed';
+  const start = Number(value);
+  return Number.isFinite(start) ? `${start}-${String(start + 1).slice(-2)}` : 'Season not listed';
+}
+
 function formatColumn(row, [key, , formatter]) {
   return formatter ? formatter(row[key], row) : formatCell(row[key]);
 }
 
 function playerStartYear(value) {
-  return value ? seasonLabel(value) : 'Start not listed';
+  return value ? compactSeasonLabel(value) : 'Start not listed';
 }
 
 function playerEndYear(value, row) {
   if (row?.active && (value === null || value === undefined || Number(value) >= currentSeasonStartYear())) {
     return 'Active';
   }
-  return value ? seasonLabel(value) : 'Final season not listed';
+  return value ? compactSeasonLabel(value) : 'Final season not listed';
 }
 
 function teamEndYear(value) {
   return value && Number(value) < 2100 ? seasonLabel(value) : 'Active';
+}
+
+function careerRangeText(row) {
+  const start = row?.fromYear || 'Start not listed';
+  if (row?.active && (row.toYear === null || row.toYear === undefined || Number(row.toYear) >= currentSeasonStartYear())) {
+    return `${start} - Active`;
+  }
+  const finalYear = Number(row?.toYear);
+  return Number.isFinite(finalYear) ? `${start} - ${finalYear + 1}` : `${start} - Final season not listed`;
+}
+
+function seasonTeamText(rows) {
+  if (!rows?.length) return 'Team not listed';
+  return rows.map((row) => cleanName(row.teamName)).filter(Boolean).join(' / ') || 'Team not listed';
+}
+
+function championshipText(value) {
+  return Array.isArray(value) && value.length ? value.join(', ') : '';
 }
 
 function readablePosition(value) {
@@ -1450,12 +1485,16 @@ function readablePosition(value) {
     .join(' / ');
 }
 
+function boxScorePosition(value) {
+  return value ? readablePosition(value) : 'Bench';
+}
+
 function playerGameTitle(row) {
   return `${formatShortDate(row.gameDateTimeEst)} vs ${cleanName(row.opponentTeamName) || 'Opponent'}`;
 }
 
 function playerGameMeta(row) {
-  const result = row.win === true ? 'Win' : row.win === false ? 'Loss' : 'Result unknown';
+  const result = row.win === true ? 'Win' : row.win === false ? 'Loss' : 'Result pending';
   return `${result} - ${teamScoreText(row)} - ${statCell(row.points)} PTS, ${statCell(row.rebounds)} REB, ${statCell(row.assists)} AST`;
 }
 
@@ -1483,6 +1522,32 @@ function favoriteName(prediction, game) {
     return game?.awayTeamName || 'Away';
   }
   return 'No favorite';
+}
+
+function legalProjectedScore(prediction) {
+  let home = roundedNumber(prediction.homeTeamScore);
+  let away = roundedNumber(prediction.awayTeamScore);
+  if (home === null || away === null) {
+    return {
+      homeTeamScore: prediction.homeTeamScore,
+      awayTeamScore: prediction.awayTeamScore,
+      predictedWinnerTeamId: prediction.predictedWinnerTeamId,
+      margin: Math.abs(Number(prediction.pointDifferential) || 0),
+    };
+  }
+  if (home === away) {
+    const rawMargin = Number(prediction.pointDifferential) || 0;
+    const homeFavored = rawMargin > 0 || String(prediction.predictedWinnerTeamId) === String(prediction.homeTeamId);
+    if (homeFavored) home += 1;
+    else away += 1;
+  }
+  const margin = home - away;
+  return {
+    homeTeamScore: home,
+    awayTeamScore: away,
+    predictedWinnerTeamId: margin > 0 ? prediction.homeTeamId : prediction.awayTeamId,
+    margin: Math.abs(margin),
+  };
 }
 
 function labelize(value) {
@@ -1536,7 +1601,12 @@ function statCell(value) {
 
 function scoreNumber(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return 'Not listed';
-  return String(Math.round(Number(value)));
+  return String(roundedNumber(value));
+}
+
+function roundedNumber(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return null;
+  return Math.round(Number(value));
 }
 
 function resultText(value) {

@@ -226,15 +226,16 @@ button:disabled {
 
 .legend-collage {
   display: grid;
-  grid-template-columns: minmax(180px, 0.72fr) minmax(260px, 1.2fr) minmax(190px, 0.8fr);
-  align-items: end;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
   gap: 14px;
   padding: 0 clamp(24px, 7vw, 92px) 62px;
 }
 
 .legend-card {
   position: relative;
-  min-height: 260px;
+  aspect-ratio: 4 / 5;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--line);
   background: #11141a;
@@ -254,18 +255,9 @@ button:disabled {
 .legend-card img {
   width: 100%;
   height: 100%;
-  min-height: inherit;
   display: block;
   object-fit: cover;
   filter: saturate(0.96) contrast(1.04);
-}
-
-.legend-card-tall {
-  min-height: 420px;
-}
-
-.legend-card-wide {
-  min-height: 340px;
 }
 
 .metric-tile {
@@ -951,10 +943,8 @@ tr:last-child td {
     padding: 0 18px 40px;
   }
 
-  .legend-card,
-  .legend-card-tall,
-  .legend-card-wide {
-    min-height: 240px;
+  .legend-card {
+    aspect-ratio: 16 / 11;
   }
 
   .metric-row {

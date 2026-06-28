@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,6 @@ from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 
 from app.baseline_model import (
-    clamp_round,
     clean_features,
     example_time,
     numeric_feature,
@@ -31,13 +31,17 @@ HIT_THRESHOLDS = {
     "away_team_score": 10,
 }
 
+MODEL_VERSION = "game-score-baseline-v2"
+MIN_PLAUSIBLE_SCORE = 60.0
+MAX_PLAUSIBLE_SCORE = 180.0
+
 
 @dataclass
 class GameScoreBaselineModel:
     pipeline: Pipeline | None = None
     fallback_targets: dict[str, float] = field(default_factory=dict)
     trained_rows: int = 0
-    model_version: str = "game-score-baseline-v1"
+    model_version: str = MODEL_VERSION
     recency_halflife_days: float | None = None
 
     @classmethod
@@ -139,7 +143,7 @@ class GameScoreBaselineModel:
             pipeline=artifact.get("pipeline"),
             fallback_targets=artifact.get("fallback_targets", {}),
             trained_rows=artifact.get("trained_rows", 0),
-            model_version=artifact.get("model_version", "game-score-baseline-v1"),
+            model_version=MODEL_VERSION,
             recency_halflife_days=artifact.get("recency_halflife_days"),
         )
 
@@ -156,24 +160,21 @@ class GameScoreBaselineModel:
     def predict(self, raw_features: dict[str, Any], home_team_id: int | None, away_team_id: int | None) -> dict[str, Any]:
         features = clean_features(raw_features)
         if self.pipeline is None:
-            scores = self._fallback_prediction(features)
+            raw_scores = self._fallback_prediction(features)
         else:
             values = self.pipeline.predict([features])[0]
-            scores = {
-                output_name: clamp_round(float(values[index]))
+            raw_scores = {
+                output_name: max(0.0, float(values[index]))
                 for index, (output_name, _) in enumerate(TARGETS)
             }
 
-        point_differential = round(scores["home_team_score"] - scores["away_team_score"], 2)
-        winner = None
-        if point_differential > 0:
-            winner = home_team_id
-        elif point_differential < 0:
-            winner = away_team_id
+        scores = legal_basketball_scores(plausible_scores(raw_scores, features, self.fallback_targets), features)
+        point_differential = scores["home_team_score"] - scores["away_team_score"]
+        winner = home_team_id if point_differential > 0 else away_team_id
         return {
             **scores,
             "predicted_winner_team_id": winner,
-            "point_differential": point_differential,
+            "point_differential": float(point_differential),
             "confidence_score": confidence_score(features, self.pipeline is not None, self.trained_rows, abs(point_differential)),
             "factors": factors(raw_features),
         }
@@ -182,8 +183,8 @@ class GameScoreBaselineModel:
         home = score_average(features, "home", self.fallback_targets.get("home_team_score", 110.0))
         away = score_average(features, "away", self.fallback_targets.get("away_team_score", 108.0))
         return {
-            "home_team_score": clamp_round(home),
-            "away_team_score": clamp_round(away),
+            "home_team_score": max(0.0, home),
+            "away_team_score": max(0.0, away),
         }
 
 
@@ -219,6 +220,67 @@ def score_average(features: dict[str, float | str], side: str, fallback: float) 
     ]
     values = [value for value in candidates if value is not None]
     return sum(values) / len(values) if values else fallback
+
+
+def plausible_scores(
+        raw_scores: dict[str, float],
+        features: dict[str, float | str],
+        fallback_targets: dict[str, float]) -> dict[str, float]:
+    return {
+        "home_team_score": plausible_score(
+            raw_scores["home_team_score"],
+            score_average(features, "home", fallback_targets.get("home_team_score", 110.0))),
+        "away_team_score": plausible_score(
+            raw_scores["away_team_score"],
+            score_average(features, "away", fallback_targets.get("away_team_score", 108.0))),
+    }
+
+
+def plausible_score(value: float, fallback: float) -> float:
+    if math.isfinite(value) and MIN_PLAUSIBLE_SCORE <= value <= MAX_PLAUSIBLE_SCORE:
+        return value
+    return fallback
+
+
+def legal_basketball_scores(raw_scores: dict[str, float], features: dict[str, float | str]) -> dict[str, float]:
+    home = whole_score(raw_scores["home_team_score"])
+    away = whole_score(raw_scores["away_team_score"])
+    if home != away:
+        return {
+            "home_team_score": float(home),
+            "away_team_score": float(away),
+        }
+
+    raw_margin = raw_scores["home_team_score"] - raw_scores["away_team_score"]
+    if raw_margin == 0:
+        raw_margin = tiebreak_margin(features)
+    if raw_margin > 0:
+        home += 1
+    else:
+        away += 1
+    return {
+        "home_team_score": float(home),
+        "away_team_score": float(away),
+    }
+
+
+def whole_score(value: float) -> int:
+    return int(max(0.0, value) + 0.5)
+
+
+def tiebreak_margin(features: dict[str, float | str]) -> float:
+    signals = (
+        numeric_feature(features, "season_point_differential_delta", 0),
+        numeric_feature(features, "last_5_point_differential_delta", 0),
+        numeric_feature(features, "home_season_point_differential_avg", 0)
+        - numeric_feature(features, "away_season_point_differential_avg", 0),
+        numeric_feature(features, "home_games_played_prior", 0)
+        - numeric_feature(features, "away_games_played_prior", 0),
+    )
+    for signal in signals:
+        if signal != 0:
+            return signal
+    return -1.0
 
 
 def confidence_score(features: dict[str, float | str], trained: bool, trained_rows: int, spread: float) -> float:

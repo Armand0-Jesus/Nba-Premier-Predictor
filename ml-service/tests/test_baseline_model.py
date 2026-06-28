@@ -20,6 +20,10 @@ class PlayerBaselineModelTests(unittest.TestCase):
         self.assertEqual(7.0, prediction["projected_rebounds"])
         self.assertEqual(5.0, prediction["projected_assists"])
         self.assertEqual(33.0, prediction["projected_minutes"])
+        self.assertEqual(0.0, prediction["projected_steals"])
+        self.assertEqual(0.0, prediction["projected_blocks"])
+        self.assertEqual(0.0, prediction["projected_turnovers"])
+        self.assertEqual(0.0, prediction["projected_field_goal_percentage"])
         self.assertEqual(37.9, prediction["fantasy_points"])
         self.assertEqual("medium", prediction["risk_level"])
         self.assertGreater(prediction["confidence_score"], 0)
@@ -106,6 +110,8 @@ class PlayerBaselineModelTests(unittest.TestCase):
         self.assertEqual("2023-10-01T19:00:00", evaluation["training_data_start"])
         self.assertEqual("2023-10-04T19:00:00", evaluation["validation_data_end"])
         self.assertIn("projected_points", evaluation["metrics"])
+        self.assertIn("projected_steals", evaluation["metrics"])
+        self.assertIn("projected_field_goals_attempted", evaluation["metrics"])
         self.assertIn("mae", evaluation["metrics"]["fantasy_points"])
         self.assertIn("rmse", evaluation["metrics"]["fantasy_points"])
         self.assertEqual(8.0, evaluation["metrics"]["fantasy_points"]["hit_threshold"])
@@ -135,6 +141,8 @@ class PlayerBaselineModelTests(unittest.TestCase):
 
 
 def training_row(points, rebounds, assists, minutes, fantasy_points, game_time=None):
+    field_goals_made = max(1, round(points / 2))
+    field_goals_attempted = max(field_goals_made, round(points))
     return {
         "gameDateTime": game_time,
         "features": {
@@ -144,11 +152,21 @@ def training_row(points, rebounds, assists, minutes, fantasy_points, game_time=N
             "last_5_rebounds_avg": float(rebounds),
             "last_5_assists_avg": float(assists),
             "last_5_minutes_avg": float(minutes),
+            "last_5_steals_avg": 1.0,
+            "last_5_blocks_avg": 0.5,
+            "last_5_turnovers_avg": 2.0,
+            "last_5_field_goals_made_avg": float(field_goals_made),
+            "last_5_field_goals_attempted_avg": float(field_goals_attempted),
         },
         "targets": {
             "points": points,
             "rebounds": rebounds,
             "assists": assists,
+            "steals": 1,
+            "blocks": 0,
+            "turnovers": 2,
+            "fieldGoalsMade": field_goals_made,
+            "fieldGoalsAttempted": field_goals_attempted,
             "minutes": minutes,
             "fantasyPoints": fantasy_points,
         },
