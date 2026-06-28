@@ -281,6 +281,44 @@ class FeatureGenerationIntegrationTests {
         assertThat(cutoffViolations).isZero();
     }
 
+    @Test
+    void generatesFeatureSnapshotsForSeasonRange() throws Exception {
+        mockMvc.perform(post("/api/features/player-snapshots/generate")
+                        .param("startSeason", "2022")
+                        .param("endSeason", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.featureType").value("player"))
+                .andExpect(jsonPath("$.snapshotsGenerated").value(4));
+        mockMvc.perform(post("/api/features/team-snapshots/generate")
+                        .param("startSeason", "2022")
+                        .param("endSeason", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.featureType").value("team"))
+                .andExpect(jsonPath("$.snapshotsGenerated").value(8));
+        mockMvc.perform(post("/api/features/game-snapshots/generate")
+                        .param("startSeason", "2022")
+                        .param("endSeason", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.featureType").value("game"))
+                .andExpect(jsonPath("$.snapshotsGenerated").value(4));
+
+        assertThat(countRows("player_feature_snapshots")).isEqualTo(4);
+        assertThat(countRows("team_feature_snapshots")).isEqualTo(8);
+        assertThat(countRows("game_feature_snapshots")).isEqualTo(4);
+    }
+
+    @Test
+    void rejectsAmbiguousFeatureGenerationSeasonFilters() throws Exception {
+        mockMvc.perform(post("/api/features/player-snapshots/generate")
+                        .param("season", "2023")
+                        .param("startSeason", "2022"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/features/game-snapshots/generate")
+                        .param("startSeason", "2024")
+                        .param("endSeason", "2023"))
+                .andExpect(status().isBadRequest());
+    }
+
     private Integer countRows(String tableName) {
         return jdbcTemplate.queryForObject("select count(*) from " + tableName, Integer.class);
     }

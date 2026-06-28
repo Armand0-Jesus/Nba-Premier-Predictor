@@ -42,7 +42,12 @@ public class TeamFeatureSnapshotService {
 
     @Transactional
     public FeatureGenerationResponse generateTeam(Integer seasonStartYear) {
-        List<TeamFeatureRow> rows = loadTeamRows(seasonStartYear);
+        return generateTeam(seasonStartYear, null, null);
+    }
+
+    @Transactional
+    public FeatureGenerationResponse generateTeam(Integer seasonStartYear, Integer startSeason, Integer endSeason) {
+        List<TeamFeatureRow> rows = loadTeamRows(seasonStartYear, startSeason, endSeason);
         Map<Long, List<TeamFeatureRow>> byTeam = groupByTeam(rows);
         List<Object[]> batch = new ArrayList<>();
 
@@ -67,7 +72,12 @@ public class TeamFeatureSnapshotService {
 
     @Transactional
     public FeatureGenerationResponse generateGame(Integer seasonStartYear) {
-        List<TeamFeatureRow> rows = loadTeamRows(seasonStartYear);
+        return generateGame(seasonStartYear, null, null);
+    }
+
+    @Transactional
+    public FeatureGenerationResponse generateGame(Integer seasonStartYear, Integer startSeason, Integer endSeason) {
+        List<TeamFeatureRow> rows = loadTeamRows(seasonStartYear, startSeason, endSeason);
         Map<Long, List<TeamFeatureRow>> byTeam = groupByTeam(rows);
         Map<Long, List<TeamFeatureRow>> byGame = rows.stream()
                 .collect(Collectors.groupingBy(TeamFeatureRow::gameId, LinkedHashMap::new, Collectors.toList()));
@@ -109,17 +119,19 @@ public class TeamFeatureSnapshotService {
         return new FeatureGenerationResponse("game", seasonStartYear, batch.size());
     }
 
-    private List<TeamFeatureRow> loadTeamRows(Integer seasonStartYear) {
+    private List<TeamFeatureRow> loadTeamRows(Integer seasonStartYear, Integer startSeason, Integer endSeason) {
+        List<Object> params = new ArrayList<>();
+        String seasonFilter = seasonFilter(seasonStartYear, startSeason, endSeason, params);
         List<TeamFeatureRow> rows = jdbcTemplate.query("""
                 select t.game_id, t.team_id, t.opponent_team_id, g.season_start_year,
                        g.game_date_time_est, t.home, t.team_score, t.opponent_score,
                        t.assists, t.rebounds_total, t.turnovers
                 from team_game_stats t
                 join games g on g.game_id = t.game_id
-                where (? is null or g.season_start_year = ?)
-                  and g.game_date_time_est is not null
+                where g.game_date_time_est is not null
+                %s
                 order by g.game_date_time_est, t.game_id, t.team_id
-                """, this::mapTeamRow, seasonStartYear, seasonStartYear);
+                """.formatted(seasonFilter), this::mapTeamRow, params.toArray());
         Map<Long, List<RosterAgeRow>> rosterRows = loadRosterAgeRows().stream()
                 .collect(Collectors.groupingBy(RosterAgeRow::teamId, LinkedHashMap::new, Collectors.toList()));
         rosterRows.values().forEach(teamRows -> teamRows.sort(Comparator.comparing(RosterAgeRow::snapshotDate)));
@@ -128,6 +140,23 @@ public class TeamFeatureSnapshotService {
         return rows.stream()
                 .map(row -> withAgeContext(row, rosterRows.getOrDefault(row.teamId(), List.of()), injuryRows, transactionRows))
                 .toList();
+    }
+
+    private static String seasonFilter(Integer seasonStartYear, Integer startSeason, Integer endSeason, List<Object> params) {
+        StringBuilder filter = new StringBuilder();
+        if (seasonStartYear != null) {
+            filter.append("                  and g.season_start_year = ?\n");
+            params.add(seasonStartYear);
+        }
+        if (startSeason != null) {
+            filter.append("                  and g.season_start_year >= ?\n");
+            params.add(startSeason);
+        }
+        if (endSeason != null) {
+            filter.append("                  and g.season_start_year <= ?\n");
+            params.add(endSeason);
+        }
+        return filter.toString();
     }
 
     private TeamFeatureRow mapTeamRow(ResultSet rs, int rowNum) throws SQLException {

@@ -80,6 +80,8 @@ insert into player_game_stats (
     points, assists, blocks, steals, rebounds_total, fouls_personal, turnovers,
     plus_minus_points, starting_position
 ) values
+    (22201000, 1629673, 1610612744, 1610612764, true, true, 26.00,
+     18, 3, 0, 1, 4, 2, 2, 8, 'G'),
     (22300001, 201939, 1610612744, 1610612747, true, true, 30.00,
      10, 4, 0, 1, 5, 2, 2, 10, 'G'),
     (22300002, 201939, 1610612744, 1610612747, true, false, 32.00,
@@ -91,6 +93,8 @@ insert into team_game_stats (
     game_id, team_id, opponent_team_id, home, win, team_score, opponent_score,
     assists, blocks, steals, rebounds_total, turnovers, num_minutes
 ) values
+    (22201000, 1610612744, 1610612764, true, true, 110, 105, 24, 4, 7, 43, 13, 240.00),
+    (22201000, 1610612764, 1610612744, false, false, 105, 110, 23, 3, 6, 41, 14, 240.00),
     (22300001, 1610612744, 1610612747, true, true, 100, 90, 25, 3, 6, 44, 12, 240.00),
     (22300001, 1610612747, 1610612744, false, false, 90, 100, 22, 3, 6, 40, 14, 240.00),
     (22300002, 1610612747, 1610612744, true, false, 105, 110, 24, 4, 7, 41, 12, 240.00),

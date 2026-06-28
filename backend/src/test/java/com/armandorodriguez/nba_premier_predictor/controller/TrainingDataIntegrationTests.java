@@ -86,6 +86,29 @@ class TrainingDataIntegrationTests {
     }
 
     @Test
+    void returnsPlayerTrainingRowsForSeasonRange() throws Exception {
+        mockMvc.perform(post("/api/features/player-snapshots/generate")
+                        .param("startSeason", "2022")
+                        .param("endSeason", "2023"))
+                .andExpect(status().isOk());
+
+        String responseJson = mockMvc.perform(get("/api/training-data/player-stats")
+                        .param("startSeason", "2022")
+                        .param("endSeason", "2023")
+                        .param("limit", "10"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        List<Map<String, Object>> rows = objectMapper.readValue(responseJson, new TypeReference<>() {
+        });
+
+        assertThat(rows).hasSize(4);
+        assertThat(rows).extracting(row -> row.get("seasonStartYear"))
+                .containsExactly(2022, 2023, 2023, 2023);
+    }
+
+    @Test
     void returnsGameScoreTrainingRowsFromGameFeatureSnapshotsAndActualScores() throws Exception {
         mockMvc.perform(post("/api/features/game-snapshots/generate").param("season", "2023"))
                 .andExpect(status().isOk());
@@ -118,6 +141,41 @@ class TrainingDataIntegrationTests {
                 .containsEntry("awayScore", 120)
                 .containsEntry("winnerTeamId", 1610612744)
                 .containsEntry("pointDifferential", 10);
+    }
+
+    @Test
+    void returnsGameScoreTrainingRowsForSeasonRange() throws Exception {
+        mockMvc.perform(post("/api/features/game-snapshots/generate")
+                        .param("startSeason", "2022")
+                        .param("endSeason", "2023"))
+                .andExpect(status().isOk());
+
+        String responseJson = mockMvc.perform(get("/api/training-data/game-scores")
+                        .param("startSeason", "2022")
+                        .param("endSeason", "2023")
+                        .param("limit", "10"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        List<Map<String, Object>> rows = objectMapper.readValue(responseJson, new TypeReference<>() {
+        });
+
+        assertThat(rows).hasSize(4);
+        assertThat(rows).extracting(row -> row.get("seasonStartYear"))
+                .containsExactly(2022, 2023, 2023, 2023);
+    }
+
+    @Test
+    void rejectsAmbiguousSeasonFilters() throws Exception {
+        mockMvc.perform(get("/api/training-data/player-stats")
+                        .param("season", "2023")
+                        .param("startSeason", "2022"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/training-data/game-scores")
+                        .param("startSeason", "2024")
+                        .param("endSeason", "2023"))
+                .andExpect(status().isBadRequest());
     }
 
     @SuppressWarnings("unchecked")

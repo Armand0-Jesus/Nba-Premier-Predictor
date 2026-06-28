@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -29,8 +30,14 @@ public class TrainingDataService {
         this.objectMapper = objectMapper;
     }
 
-    public List<PlayerTrainingDataRow> playerStatRows(Integer seasonStartYear, int limit, int offset) {
-        String seasonFilter = seasonStartYear == null ? "" : "                  and g.season_start_year = ?\n";
+    public List<PlayerTrainingDataRow> playerStatRows(
+            Integer seasonStartYear,
+            Integer startSeason,
+            Integer endSeason,
+            int limit,
+            int offset) {
+        List<Object> params = new ArrayList<>();
+        String seasonFilter = seasonFilter(seasonStartYear, startSeason, endSeason, params);
         String sql = """
                 select f.game_id, f.player_id, f.team_id, g.season_start_year, g.game_date_time_est,
                        f.data_cutoff_time, f.features, s.points, s.rebounds_total, s.assists,
@@ -44,17 +51,23 @@ public class TrainingDataService {
                 where s.points is not null
                   and s.rebounds_total is not null
                   and s.assists is not null
-                %sorder by f.id
+                %sorder by g.game_date_time_est, f.game_id, f.player_id
                 limit ?
                 offset ?
                 """.formatted(seasonFilter);
-        return seasonStartYear == null
-                ? jdbcTemplate.query(sql, this::mapRow, limit, offset)
-                : jdbcTemplate.query(sql, this::mapRow, seasonStartYear, limit, offset);
+        params.add(limit);
+        params.add(offset);
+        return jdbcTemplate.query(sql, this::mapRow, params.toArray());
     }
 
-    public List<TeamScoreTrainingDataRow> gameScoreRows(Integer seasonStartYear, int limit, int offset) {
-        String seasonFilter = seasonStartYear == null ? "" : "                  and g.season_start_year = ?\n";
+    public List<TeamScoreTrainingDataRow> gameScoreRows(
+            Integer seasonStartYear,
+            Integer startSeason,
+            Integer endSeason,
+            int limit,
+            int offset) {
+        List<Object> params = new ArrayList<>();
+        String seasonFilter = seasonFilter(seasonStartYear, startSeason, endSeason, params);
         String sql = """
                 select f.game_id, g.home_team_id, g.away_team_id, g.season_start_year,
                        g.game_date_time_est, f.data_cutoff_time, f.features,
@@ -63,13 +76,34 @@ public class TrainingDataService {
                 join games g on g.game_id = f.game_id
                 where g.home_score is not null
                   and g.away_score is not null
-                %sorder by f.id
+                %sorder by g.game_date_time_est, f.game_id
                 limit ?
                 offset ?
                 """.formatted(seasonFilter);
-        return seasonStartYear == null
-                ? jdbcTemplate.query(sql, this::mapGameScoreRow, limit, offset)
-                : jdbcTemplate.query(sql, this::mapGameScoreRow, seasonStartYear, limit, offset);
+        params.add(limit);
+        params.add(offset);
+        return jdbcTemplate.query(sql, this::mapGameScoreRow, params.toArray());
+    }
+
+    private static String seasonFilter(
+            Integer seasonStartYear,
+            Integer startSeason,
+            Integer endSeason,
+            List<Object> params) {
+        StringBuilder filter = new StringBuilder();
+        if (seasonStartYear != null) {
+            filter.append("                  and g.season_start_year = ?\n");
+            params.add(seasonStartYear);
+        }
+        if (startSeason != null) {
+            filter.append("                  and g.season_start_year >= ?\n");
+            params.add(startSeason);
+        }
+        if (endSeason != null) {
+            filter.append("                  and g.season_start_year <= ?\n");
+            params.add(endSeason);
+        }
+        return filter.toString();
     }
 
     private PlayerTrainingDataRow mapRow(ResultSet rs, int rowNum) throws SQLException {

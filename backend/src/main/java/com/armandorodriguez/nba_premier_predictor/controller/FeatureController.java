@@ -2,9 +2,11 @@ package com.armandorodriguez.nba_premier_predictor.controller;
 
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.armandorodriguez.nba_premier_predictor.dto.FeatureGenerationResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.FeatureSnapshotResponse;
@@ -61,17 +63,38 @@ public class FeatureController {
     }
 
     @PostMapping("/player-snapshots/generate")
-    FeatureGenerationResponse generatePlayerSnapshots(@RequestParam(required = false) Integer season) {
-        return playerFeatureSnapshotService.generate(season);
+    FeatureGenerationResponse generatePlayerSnapshots(
+            @RequestParam(required = false) Integer season,
+            @RequestParam(required = false) Integer startSeason,
+            @RequestParam(required = false) Integer endSeason) {
+        validateSeasonWindow(season, startSeason, endSeason);
+        return playerFeatureSnapshotService.generate(season, startSeason, endSeason);
     }
 
     @PostMapping("/team-snapshots/generate")
-    FeatureGenerationResponse generateTeamSnapshots(@RequestParam(required = false) Integer season) {
-        return teamFeatureSnapshotService.generateTeam(season);
+    FeatureGenerationResponse generateTeamSnapshots(
+            @RequestParam(required = false) Integer season,
+            @RequestParam(required = false) Integer startSeason,
+            @RequestParam(required = false) Integer endSeason) {
+        validateSeasonWindow(season, startSeason, endSeason);
+        return teamFeatureSnapshotService.generateTeam(season, startSeason, endSeason);
     }
 
     @PostMapping("/game-snapshots/generate")
-    FeatureGenerationResponse generateGameSnapshots(@RequestParam(required = false) Integer season) {
-        return teamFeatureSnapshotService.generateGame(season);
+    FeatureGenerationResponse generateGameSnapshots(
+            @RequestParam(required = false) Integer season,
+            @RequestParam(required = false) Integer startSeason,
+            @RequestParam(required = false) Integer endSeason) {
+        validateSeasonWindow(season, startSeason, endSeason);
+        return teamFeatureSnapshotService.generateGame(season, startSeason, endSeason);
+    }
+
+    private static void validateSeasonWindow(Integer season, Integer startSeason, Integer endSeason) {
+        if (season != null && (startSeason != null || endSeason != null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Use either season or startSeason/endSeason, not both");
+        }
+        if (startSeason != null && endSeason != null && startSeason > endSeason) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "startSeason must be before or equal to endSeason");
+        }
     }
 }

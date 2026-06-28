@@ -41,8 +41,13 @@ public class PlayerFeatureSnapshotService {
 
     @Transactional
     public FeatureGenerationResponse generate(Integer seasonStartYear) {
-        List<PlayerFeatureRow> playerRows = loadPlayerRows(seasonStartYear);
-        Map<Long, List<TeamFeatureRow>> teamRows = loadTeamRows(seasonStartYear).stream()
+        return generate(seasonStartYear, null, null);
+    }
+
+    @Transactional
+    public FeatureGenerationResponse generate(Integer seasonStartYear, Integer startSeason, Integer endSeason) {
+        List<PlayerFeatureRow> playerRows = loadPlayerRows(seasonStartYear, startSeason, endSeason);
+        Map<Long, List<TeamFeatureRow>> teamRows = loadTeamRows(seasonStartYear, startSeason, endSeason).stream()
                 .collect(Collectors.groupingBy(TeamFeatureRow::teamId, LinkedHashMap::new, Collectors.toList()));
 
         List<Object[]> batch = new ArrayList<>();
@@ -70,25 +75,23 @@ public class PlayerFeatureSnapshotService {
         return new FeatureGenerationResponse("player", seasonStartYear, batch.size());
     }
 
-    private List<PlayerFeatureRow> loadPlayerRows(Integer seasonStartYear) {
+    private List<PlayerFeatureRow> loadPlayerRows(Integer seasonStartYear, Integer startSeason, Integer endSeason) {
+        List<Object> params = new ArrayList<>();
+        String seasonFilter = seasonFilter(seasonStartYear, startSeason, endSeason, params);
         List<PlayerFeatureRow> rows = jdbcTemplate.query("""
                 select s.game_id, s.player_id, s.team_id, s.opponent_team_id, g.season_start_year,
                        g.game_date_time_est, s.home, s.num_minutes, s.points, s.rebounds_total,
                        s.assists, s.turnovers, s.steals, s.blocks, p.birth_date, p.from_year,
-                       (
-                           select count(*)
-                           from player_game_stats prior_stats
-                           join games prior_games on prior_games.game_id = prior_stats.game_id
-                           where prior_stats.player_id = s.player_id
-                             and prior_games.game_date_time_est < g.game_date_time_est
+                       count(*) over (
+                           partition by s.player_id
+                           order by g.game_date_time_est, s.game_id
+                           rows between unbounded preceding and 1 preceding
                        ) as career_games_played_before_game,
-                       (
-                           select coalesce(sum(prior_stats.num_minutes), 0)
-                           from player_game_stats prior_stats
-                           join games prior_games on prior_games.game_id = prior_stats.game_id
-                           where prior_stats.player_id = s.player_id
-                             and prior_games.game_date_time_est < g.game_date_time_est
-                       ) as career_minutes_played_before_game,
+                       coalesce(sum(s.num_minutes) over (
+                           partition by s.player_id
+                           order by g.game_date_time_est, s.game_id
+                           rows between unbounded preceding and 1 preceding
+                       ), 0) as career_minutes_played_before_game,
                        (
                            select count(*)
                            from injury_reports injuries
@@ -98,10 +101,10 @@ public class PlayerFeatureSnapshotService {
                 from player_game_stats s
                 join games g on g.game_id = s.game_id
                 join players p on p.player_id = s.player_id
-                where (? is null or g.season_start_year = ?)
-                  and g.game_date_time_est is not null
+                where g.game_date_time_est is not null
+                %s
                 order by s.player_id, g.game_date_time_est
-                """, this::mapPlayerRow, seasonStartYear, seasonStartYear);
+                """.formatted(seasonFilter), this::mapPlayerRow, params.toArray());
         Map<Long, List<RosterContextRow>> rosterRows = loadRosterContextRows().stream()
                 .collect(Collectors.groupingBy(RosterContextRow::teamId, LinkedHashMap::new, Collectors.toList()));
         rosterRows.values().forEach(teamRows -> teamRows.sort(Comparator.comparing(RosterContextRow::snapshotDate)));
@@ -115,17 +118,36 @@ public class PlayerFeatureSnapshotService {
                 .toList();
     }
 
-    private List<TeamFeatureRow> loadTeamRows(Integer seasonStartYear) {
+    private List<TeamFeatureRow> loadTeamRows(Integer seasonStartYear, Integer startSeason, Integer endSeason) {
+        List<Object> params = new ArrayList<>();
+        String seasonFilter = seasonFilter(seasonStartYear, startSeason, endSeason, params);
         return jdbcTemplate.query("""
                 select t.game_id, t.team_id, t.opponent_team_id, g.season_start_year,
                        g.game_date_time_est, t.home, t.team_score, t.opponent_score,
                        t.assists, t.rebounds_total, t.turnovers
                 from team_game_stats t
                 join games g on g.game_id = t.game_id
-                where (? is null or g.season_start_year = ?)
-                  and g.game_date_time_est is not null
+                where g.game_date_time_est is not null
+                %s
                 order by t.team_id, g.game_date_time_est
-                """, this::mapTeamRow, seasonStartYear, seasonStartYear);
+                """.formatted(seasonFilter), this::mapTeamRow, params.toArray());
+    }
+
+    private static String seasonFilter(Integer seasonStartYear, Integer startSeason, Integer endSeason, List<Object> params) {
+        StringBuilder filter = new StringBuilder();
+        if (seasonStartYear != null) {
+            filter.append("                  and g.season_start_year = ?\n");
+            params.add(seasonStartYear);
+        }
+        if (startSeason != null) {
+            filter.append("                  and g.season_start_year >= ?\n");
+            params.add(startSeason);
+        }
+        if (endSeason != null) {
+            filter.append("                  and g.season_start_year <= ?\n");
+            params.add(endSeason);
+        }
+        return filter.toString();
     }
 
     private PlayerFeatureRow mapPlayerRow(ResultSet rs, int rowNum) throws SQLException {
