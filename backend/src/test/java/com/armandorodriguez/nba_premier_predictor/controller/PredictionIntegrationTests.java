@@ -47,7 +47,7 @@ class PredictionIntegrationTests {
                         .content(playerRequestJson()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.predictionId").isNumber())
-                .andExpect(jsonPath("$.modelVersion").value("player-baseline-v1"))
+                .andExpect(jsonPath("$.modelVersion").value("player-baseline-v2"))
                 .andExpect(jsonPath("$.projectedPoints").value(18.5))
                 .andExpect(jsonPath("$.fantasyPoints").value(35.4));
 
@@ -59,7 +59,7 @@ class PredictionIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].predictionType").value("player_stat"))
                 .andExpect(jsonPath("$[0].projectedPoints").value(18.5))
-                .andExpect(jsonPath("$[0].modelVersion").value("player-baseline-v1"));
+                .andExpect(jsonPath("$[0].modelVersion").value("player-baseline-v2"));
     }
 
     @Test
@@ -146,12 +146,12 @@ class PredictionIntegrationTests {
     void exposesModelMetricsAndVersionsThroughBackend() throws Exception {
         mockMvc.perform(get("/api/model/metrics"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.modelVersion").value("player-baseline-v1"))
+                .andExpect(jsonPath("$.modelVersion").value("player-baseline-v2"))
                 .andExpect(jsonPath("$.trainedRows").value(30034));
 
         mockMvc.perform(get("/api/model/versions"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.activeModel.versionName").value("player-baseline-v1"))
+                .andExpect(jsonPath("$.activeModel.versionName").value("player-baseline-v2"))
                 .andExpect(jsonPath("$.activeModel.modelType").value("ridge-regression"));
     }
 
@@ -247,21 +247,21 @@ class PredictionIntegrationTests {
         @Override
         public Map<String, Object> modelMetrics() {
             return Map.of(
-                    "modelVersion", "player-baseline-v1",
+                    "modelVersion", "player-baseline-v2",
                     "trainedRows", 30034);
         }
 
         @Override
         public Map<String, Object> modelVersions() {
             return Map.of("activeModel", Map.of(
-                    "versionName", "player-baseline-v1",
+                    "versionName", "player-baseline-v2",
                     "modelType", "ridge-regression"));
         }
 
         @Override
         public Map<String, Object> evaluateModels() {
             return Map.of(
-                    "modelVersion", "player-baseline-v1",
+                    "modelVersion", "player-baseline-v2",
                     "trainedRows", 30034,
                     "playerBaseline", Map.of(
                             "metrics", Map.of(
@@ -274,7 +274,7 @@ class PredictionIntegrationTests {
         private static PlayerPredictionResponse prediction(PlayerPredictionRequest request) {
             return new PlayerPredictionResponse(
                     null,
-                    "player-baseline-v1",
+                    "player-baseline-v2",
                     30034,
                     request.gameId(),
                     request.playerId(),
@@ -283,6 +283,12 @@ class PredictionIntegrationTests {
                     6.2,
                     5.4,
                     31.0,
+                    1.3,
+                    0.4,
+                    2.1,
+                    7.2,
+                    15.4,
+                    0.47,
                     35.4,
                     30.1,
                     40.7,

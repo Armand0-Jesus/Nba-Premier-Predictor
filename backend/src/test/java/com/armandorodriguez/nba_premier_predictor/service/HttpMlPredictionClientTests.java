@@ -30,7 +30,7 @@ class HttpMlPredictionClientTests {
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             byte[] response = """
                     {
-                      "model_version": "player-baseline-v1",
+                      "model_version": "player-baseline-v2",
                       "trained_rows": 1,
                       "game_id": 22300003,
                       "player_id": 201939,
@@ -39,6 +39,12 @@ class HttpMlPredictionClientTests {
                       "projected_rebounds": 6.2,
                       "projected_assists": 5.4,
                       "projected_minutes": 31.0,
+                      "projected_steals": 1.3,
+                      "projected_blocks": 0.4,
+                      "projected_turnovers": 2.1,
+                      "projected_field_goals_made": 7.2,
+                      "projected_field_goals_attempted": 15.4,
+                      "projected_field_goal_percentage": 0.47,
                       "fantasy_points": 35.4,
                       "fantasy_floor": 30.1,
                       "fantasy_ceiling": 40.7,

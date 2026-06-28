@@ -66,7 +66,8 @@ create table if not exists player_stat_predictions (
     projected_steals numeric(6,2),
     projected_blocks numeric(6,2),
     projected_turnovers numeric(6,2),
-    projected_minutes numeric(6,2)
+    projected_minutes numeric(6,2),
+    projected_field_goal_percentage numeric(6,4)
 );
 
 create table if not exists team_score_predictions (

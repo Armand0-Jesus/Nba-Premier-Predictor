@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import com.armandorodriguez.nba_premier_predictor.domain.PlayerGameStats;
+import com.armandorodriguez.nba_premier_predictor.dto.PlayerSeasonTeamResponse;
 
 public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats, Long> {
 
@@ -55,10 +56,31 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
             join s.game g
             where s.playerId = :playerId
               and (:season is null or g.seasonStartYear = :season)
-              and lower(coalesce(g.gameType, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
+              and lower(coalesce(g.gameType, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+              and s.numMinutes is not null
+              and s.numMinutes > 0
             order by g.gameDateTimeEst desc
             """)
     List<PlayerGameStats> findForAverages(@Param("playerId") Long playerId, @Param("season") Integer season);
+
+    @Query("""
+            select new com.armandorodriguez.nba_premier_predictor.dto.PlayerSeasonTeamResponse(
+                s.teamId,
+                trim(concat(coalesce(t.city, ''), ' ', coalesce(t.name, '')))
+            )
+            from PlayerGameStats s
+            join s.game g
+            left join s.team t
+            where s.playerId = :playerId
+              and (:season is null or g.seasonStartYear = :season)
+              and lower(coalesce(g.gameType, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
+              and s.teamId is not null
+              and s.numMinutes is not null
+              and s.numMinutes > 0
+            group by s.teamId, t.city, t.name
+            order by min(g.gameDateTimeEst)
+            """)
+    List<PlayerSeasonTeamResponse> findSeasonTeams(@Param("playerId") Long playerId, @Param("season") Integer season);
 
     @EntityGraph(attributePaths = {"game", "team", "player"})
     @Query("""

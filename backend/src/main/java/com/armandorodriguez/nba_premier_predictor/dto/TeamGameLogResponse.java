@@ -21,11 +21,15 @@ public record TeamGameLogResponse(
         String gameType,
         String gameLabel,
         String gameSubLabel,
+        String recordAfterGame,
         Integer assists,
         Integer rebounds,
         Integer steals,
         Integer blocks,
         Integer turnovers,
+        Integer fieldGoalsMade,
+        Integer fieldGoalsAttempted,
+        BigDecimal fieldGoalPercentage,
         BigDecimal minutes) {
 
     public static TeamGameLogResponse from(TeamGameStats stats) {
@@ -46,12 +50,45 @@ public record TeamGameLogResponse(
                 game == null ? null : game.getGameType(),
                 game == null ? null : game.getGameLabel(),
                 game == null ? null : game.getGameSubLabel(),
+                null,
                 stats.getAssists(),
                 stats.getReboundsTotal(),
                 stats.getSteals(),
                 stats.getBlocks(),
                 stats.getTurnovers(),
+                stats.getFieldGoalsMade(),
+                stats.getFieldGoalsAttempted(),
+                stats.getFieldGoalsPercentage(),
                 stats.getNumMinutes());
+    }
+
+    public TeamGameLogResponse withRecordAfterGame(String recordAfterGame) {
+        return new TeamGameLogResponse(
+                gameId,
+                seasonStartYear,
+                seasonLabel,
+                gameDateTimeEst,
+                teamId,
+                teamName,
+                opponentTeamId,
+                opponentTeamName,
+                home,
+                win,
+                teamScore,
+                opponentScore,
+                gameType,
+                gameLabel,
+                gameSubLabel,
+                recordAfterGame,
+                assists,
+                rebounds,
+                steals,
+                blocks,
+                turnovers,
+                fieldGoalsMade,
+                fieldGoalsAttempted,
+                fieldGoalPercentage,
+                minutes);
     }
 
     private static String opponentName(TeamGameStats stats) {

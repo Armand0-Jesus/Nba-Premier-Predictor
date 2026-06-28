@@ -50,6 +50,15 @@ public class TeamGameStats {
     private Integer blocks;
     private Integer steals;
 
+    @Column(name = "field_goals_attempted")
+    private Integer fieldGoalsAttempted;
+
+    @Column(name = "field_goals_made")
+    private Integer fieldGoalsMade;
+
+    @Column(name = "field_goals_percentage", precision = 5, scale = 3)
+    private BigDecimal fieldGoalsPercentage;
+
     @Column(name = "rebounds_total")
     private Integer reboundsTotal;
 
@@ -111,6 +120,18 @@ public class TeamGameStats {
 
     public Integer getSteals() {
         return steals;
+    }
+
+    public Integer getFieldGoalsAttempted() {
+        return fieldGoalsAttempted;
+    }
+
+    public Integer getFieldGoalsMade() {
+        return fieldGoalsMade;
+    }
+
+    public BigDecimal getFieldGoalsPercentage() {
+        return fieldGoalsPercentage;
     }
 
     public Integer getReboundsTotal() {

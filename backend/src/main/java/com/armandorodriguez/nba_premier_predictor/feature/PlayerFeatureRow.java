@@ -19,6 +19,8 @@ public record PlayerFeatureRow(
         Integer turnovers,
         Integer steals,
         Integer blocks,
+        Integer fieldGoalsMade,
+        Integer fieldGoalsAttempted,
         LocalDate birthDate,
         Integer fromYear,
         Integer careerGamesPlayedBeforeGame,

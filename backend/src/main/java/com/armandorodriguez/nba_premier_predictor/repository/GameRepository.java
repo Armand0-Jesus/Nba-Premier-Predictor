@@ -1,5 +1,8 @@
 package com.armandorodriguez.nba_premier_predictor.repository;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -49,4 +52,36 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             @Param("teamId") Long teamId,
             @Param("season") Integer season,
             @Param("win") boolean win);
+
+    @Query("""
+            select count(g)
+            from Game g
+            where (:season is null or g.seasonStartYear = :season)
+              and lower(coalesce(g.gameType, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+              and (g.homeTeamId = :teamId or g.awayTeamId = :teamId)
+              and g.gameDateTimeEst <= :through
+              and g.winnerTeamId is not null
+              and ((:win = true and g.winnerTeamId = :teamId)
+                or (:win = false and g.winnerTeamId <> :teamId))
+            """)
+    long countRegularSeasonResultsThrough(
+            @Param("teamId") Long teamId,
+            @Param("season") Integer season,
+            @Param("win") boolean win,
+            @Param("through") LocalDateTime through);
+
+    @Query("""
+            select distinct g.seasonStartYear + 1
+            from Game g
+            where g.winnerTeamId = :teamId
+              and lower(coalesce(g.gameLabel, '')) = 'nba finals'
+              and g.gameDate = (
+                  select max(finalGame.gameDate)
+                  from Game finalGame
+                  where finalGame.seasonStartYear = g.seasonStartYear
+                    and lower(coalesce(finalGame.gameLabel, '')) = 'nba finals'
+              )
+            order by g.seasonStartYear + 1
+            """)
+    List<Integer> championshipYears(@Param("teamId") Long teamId);
 }

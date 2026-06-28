@@ -23,11 +23,13 @@ import com.armandorodriguez.nba_premier_predictor.dto.PlayerAveragesResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerDashboardResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerDetailResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerGameLogResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.PlayerSeasonTeamResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerSummaryResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.SeasonResponse;
 import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundException;
 import com.armandorodriguez.nba_premier_predictor.repository.PlayerGameStatsRepository;
 import com.armandorodriguez.nba_premier_predictor.repository.PlayerRepository;
+import com.armandorodriguez.nba_premier_predictor.util.NbaSeasonResolver;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -96,13 +98,13 @@ public class PlayerService {
         return seasonService.playerSeasons(playerId);
     }
 
-    @Cacheable(cacheNames = "playerAverages", key = "'v3:' + #playerId + ':' + (#season == null ? 'all' : #season)")
+    @Cacheable(cacheNames = "playerAverages", key = "'v4:' + #playerId + ':' + (#season == null ? 'all' : #season)")
     public PlayerAveragesResponse averages(Long playerId, Integer season) {
         findPlayer(playerId);
         return PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));
     }
 
-    @Cacheable(cacheNames = "playerDashboards", key = "'v3:' + #playerId + ':' + (#season == null ? 'all' : #season)")
+    @Cacheable(cacheNames = "playerDashboards", key = "'v4:' + #playerId + ':' + (#season == null ? 'all' : #season)")
     public PlayerDashboardResponse dashboard(Long playerId, Integer season) {
         Player player = findPlayer(playerId);
         PlayerAveragesResponse averages = PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));
@@ -110,7 +112,8 @@ public class PlayerService {
                 .findGameLogs(playerId, season, null, PageRequest.of(0, 10))
                 .map(PlayerGameLogResponse::from)
                 .toList();
-        return new PlayerDashboardResponse(PlayerDetailResponse.from(player), averages, recentGames);
+        List<PlayerSeasonTeamResponse> seasonTeams = statsRepository.findSeasonTeams(playerId, season);
+        return new PlayerDashboardResponse(PlayerDetailResponse.from(player), averages, seasonTeams, recentGames);
     }
 
     private Player findPlayer(Long playerId) {
@@ -128,8 +131,7 @@ public class PlayerService {
     }
 
     private static int currentSeasonStartYear() {
-        LocalDate today = LocalDate.now();
-        return today.getMonthValue() >= 10 ? today.getYear() : today.getYear() - 1;
+        return NbaSeasonResolver.seasonStartYear(LocalDate.now());
     }
 
     private Page<PlayerSummaryResponse> cachedPlayerSearch(String cacheKey, Pageable pageable) {

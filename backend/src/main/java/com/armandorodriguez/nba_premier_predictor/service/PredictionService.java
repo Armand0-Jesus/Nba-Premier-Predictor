@@ -235,14 +235,19 @@ public class PredictionService {
         jdbcTemplate.update("""
                 insert into player_stat_predictions (
                     prediction_id, projected_points, projected_rebounds, projected_assists,
-                    projected_minutes
-                ) values (?, ?, ?, ?, ?)
+                    projected_steals, projected_blocks, projected_turnovers, projected_minutes,
+                    projected_field_goal_percentage
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 predictionId,
                 response.projectedPoints(),
                 response.projectedRebounds(),
                 response.projectedAssists(),
-                response.projectedMinutes());
+                response.projectedSteals(),
+                response.projectedBlocks(),
+                response.projectedTurnovers(),
+                response.projectedMinutes(),
+                response.projectedFieldGoalPercentage());
     }
 
     private void saveFantasyPrediction(Long predictionId, PlayerPredictionResponse response) {

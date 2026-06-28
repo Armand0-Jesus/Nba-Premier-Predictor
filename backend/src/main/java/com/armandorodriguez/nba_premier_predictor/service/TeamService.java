@@ -46,30 +46,31 @@ public class TeamService {
     }
 
     public Page<TeamResponse> search(String query, boolean currentOnly, Pageable pageable) {
-        return teamRepository.search(clean(query), currentOnly, CURRENT_NBA_TEAM_IDS, pageable).map(TeamResponse::from);
+        return teamRepository.search(clean(query), currentOnly, CURRENT_NBA_TEAM_IDS, pageable).map(this::teamResponse);
     }
 
     @Cacheable(cacheNames = "teamDetails", key = "#teamId")
     public TeamResponse get(Long teamId) {
-        return TeamResponse.from(findTeam(teamId));
+        return teamResponse(findTeam(teamId));
     }
 
-    @Cacheable(cacheNames = "teamDashboards", key = "'v3:' + #teamId + ':' + (#season == null ? 'all' : #season)")
+    @Cacheable(cacheNames = "teamDashboards", key = "'v4:' + #teamId + ':' + (#season == null ? 'all' : #season)")
     public TeamDashboardResponse dashboard(Long teamId, Integer season) {
         Team team = findTeam(teamId);
         List<TeamGameLogResponse> recentGames = statsRepository
                 .findGameLogs(teamId, season, null, PageRequest.of(0, 10))
-                .map(TeamGameLogResponse::from)
+                .map(row -> withRecordAfterGame(TeamGameLogResponse.from(row), season))
                 .toList();
         TeamRecordResponse record = TeamRecordResponse.of(
                 gameRepository.countRegularSeasonResults(teamId, season, true),
                 gameRepository.countRegularSeasonResults(teamId, season, false));
-        return new TeamDashboardResponse(TeamResponse.from(team), record, recentGames);
+        return new TeamDashboardResponse(teamResponse(team), record, recentGames);
     }
 
     public Page<TeamGameLogResponse> gameLogs(Long teamId, Integer season, String query, Pageable pageable) {
         findTeam(teamId);
-        return statsRepository.findGameLogs(teamId, season, searchPattern(query), pageable).map(TeamGameLogResponse::from);
+        return statsRepository.findGameLogs(teamId, season, searchPattern(query), pageable)
+                .map(row -> withRecordAfterGame(TeamGameLogResponse.from(row), season));
     }
 
     public List<SeasonResponse> seasons(Long teamId) {
@@ -80,6 +81,24 @@ public class TeamService {
     private Team findTeam(Long teamId) {
         return teamRepository.findById(teamId)
                 .orElseThrow(() -> new ResourceNotFoundException("Team not found: " + teamId));
+    }
+
+    private TeamResponse teamResponse(Team team) {
+        return TeamResponse.from(
+                team,
+                FranchiseMetadata.foundedYear(team),
+                FranchiseMetadata.conference(team.getId()),
+                gameRepository.championshipYears(team.getId()));
+    }
+
+    private TeamGameLogResponse withRecordAfterGame(TeamGameLogResponse row, Integer requestedSeason) {
+        if (row.gameDateTimeEst() == null || row.teamId() == null) {
+            return row;
+        }
+        Integer season = requestedSeason == null ? row.seasonStartYear() : requestedSeason;
+        long wins = gameRepository.countRegularSeasonResultsThrough(row.teamId(), season, true, row.gameDateTimeEst());
+        long losses = gameRepository.countRegularSeasonResultsThrough(row.teamId(), season, false, row.gameDateTimeEst());
+        return row.withRecordAfterGame("%d-%d".formatted(wins, losses));
     }
 
     private static String clean(String query) {

@@ -108,6 +108,8 @@ class PlayerFeatureCalculatorTests {
                 2,
                 1,
                 0,
+                6,
+                13,
                 LocalDate.parse("1988-03-14"),
                 2009,
                 (int) gameId - 1,

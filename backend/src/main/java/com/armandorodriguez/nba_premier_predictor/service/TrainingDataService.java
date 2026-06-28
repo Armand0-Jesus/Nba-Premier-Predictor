@@ -41,7 +41,8 @@ public class TrainingDataService {
         String sql = """
                 select f.game_id, f.player_id, f.team_id, g.season_start_year, g.game_date_time_est,
                        f.data_cutoff_time, f.features, s.points, s.rebounds_total, s.assists,
-                       s.steals, s.blocks, s.turnovers, s.num_minutes
+                       s.steals, s.blocks, s.turnovers, s.field_goals_made,
+                       s.field_goals_attempted, s.num_minutes
                 from player_feature_snapshots f
                 join player_game_stats s
                   on s.game_id = f.game_id
@@ -113,6 +114,8 @@ public class TrainingDataService {
         Integer steals = nullableInt(rs, "steals");
         Integer blocks = nullableInt(rs, "blocks");
         Integer turnovers = nullableInt(rs, "turnovers");
+        Integer fieldGoalsMade = nullableInt(rs, "field_goals_made");
+        Integer fieldGoalsAttempted = nullableInt(rs, "field_goals_attempted");
 
         return new PlayerTrainingDataRow(
                 rs.getLong("game_id"),
@@ -129,6 +132,8 @@ public class TrainingDataService {
                         steals,
                         blocks,
                         turnovers,
+                        fieldGoalsMade,
+                        fieldGoalsAttempted,
                         rs.getBigDecimal("num_minutes"),
                         fantasyPoints(points, rebounds, assists, steals, blocks, turnovers)));
     }

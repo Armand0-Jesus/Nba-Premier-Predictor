@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ModelMetadataService {
 
-    private static final String DEFAULT_PLAYER_MODEL_VERSION = "player-baseline-v1";
+    private static final String DEFAULT_PLAYER_MODEL_VERSION = "player-baseline-v2";
     private static final String DEFAULT_GAME_SCORE_MODEL_VERSION = "game-score-baseline-v1";
 
     private final MlPredictionClient mlPredictionClient;

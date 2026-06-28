@@ -9,6 +9,8 @@ public record PlayerTrainingTargets(
         Integer steals,
         Integer blocks,
         Integer turnovers,
+        Integer fieldGoalsMade,
+        Integer fieldGoalsAttempted,
         BigDecimal minutes,
         Double fantasyPoints) {
 }

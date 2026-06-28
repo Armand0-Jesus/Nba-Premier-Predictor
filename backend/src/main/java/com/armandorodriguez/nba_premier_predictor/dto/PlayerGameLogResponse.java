@@ -42,7 +42,7 @@ public record PlayerGameLogResponse(
                 game == null ? null : game.getGameDateTimeEst(),
                 stats.getTeamId(),
                 stats.getTeam() == null ? null : stats.getTeam().getFullName(),
-                stats.getOpponentTeamId(),
+                opponentTeamId(stats),
                 opponentName(stats),
                 stats.getHome(),
                 stats.getWin(),
@@ -66,14 +66,38 @@ public record PlayerGameLogResponse(
 
     private static String opponentName(PlayerGameStats stats) {
         var game = stats.getGame();
-        if (game == null || stats.getOpponentTeamId() == null) {
+        Long opponentTeamId = opponentTeamId(stats);
+        if (game == null || opponentTeamId == null) {
             return null;
         }
-        if (stats.getOpponentTeamId().equals(game.getHomeTeamId())) {
+        if (opponentTeamId.equals(game.getHomeTeamId())) {
             return teamName(game.getHomeTeam(), game.getHomeTeamCity(), game.getHomeTeamName());
         }
-        if (stats.getOpponentTeamId().equals(game.getAwayTeamId())) {
+        if (opponentTeamId.equals(game.getAwayTeamId())) {
             return teamName(game.getAwayTeam(), game.getAwayTeamCity(), game.getAwayTeamName());
+        }
+        return null;
+    }
+
+    private static Long opponentTeamId(PlayerGameStats stats) {
+        if (stats.getOpponentTeamId() != null) {
+            return stats.getOpponentTeamId();
+        }
+        var game = stats.getGame();
+        if (game == null) {
+            return null;
+        }
+        if (stats.getTeamId() != null && stats.getTeamId().equals(game.getHomeTeamId())) {
+            return game.getAwayTeamId();
+        }
+        if (stats.getTeamId() != null && stats.getTeamId().equals(game.getAwayTeamId())) {
+            return game.getHomeTeamId();
+        }
+        if (Boolean.TRUE.equals(stats.getHome())) {
+            return game.getAwayTeamId();
+        }
+        if (Boolean.FALSE.equals(stats.getHome())) {
+            return game.getHomeTeamId();
         }
         return null;
     }

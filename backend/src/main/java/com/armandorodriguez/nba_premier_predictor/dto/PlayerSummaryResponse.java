@@ -3,6 +3,7 @@ package com.armandorodriguez.nba_premier_predictor.dto;
 import java.time.LocalDate;
 
 import com.armandorodriguez.nba_premier_predictor.domain.Player;
+import com.armandorodriguez.nba_premier_predictor.util.NbaSeasonResolver;
 
 public record PlayerSummaryResponse(
         Long id,
@@ -29,7 +30,6 @@ public record PlayerSummaryResponse(
     }
 
     private static int currentSeasonStartYear() {
-        LocalDate today = LocalDate.now();
-        return today.getMonthValue() >= 10 ? today.getYear() : today.getYear() - 1;
+        return NbaSeasonResolver.seasonStartYear(LocalDate.now());
     }
 }

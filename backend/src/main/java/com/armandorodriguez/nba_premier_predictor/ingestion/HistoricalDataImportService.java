@@ -23,6 +23,8 @@ import java.util.zip.ZipFile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import com.armandorodriguez.nba_premier_predictor.util.NbaSeasonResolver;
+
 @Service
 public class HistoricalDataImportService {
 
@@ -161,7 +163,7 @@ public class HistoricalDataImportService {
     private int importSeasons(Path source) throws IOException {
         Set<Integer> seasons = new HashSet<>();
         readCsv(source, "Games.csv", row -> {
-            Integer season = seasonStartYear(gameDate(row));
+            Integer season = NbaSeasonResolver.seasonStartYear(gameDate(row));
             if (season != null) {
                 seasons.add(season);
             }
@@ -233,7 +235,7 @@ public class HistoricalDataImportService {
             LocalDate gameDate = gameDate(row);
             batch.add(new Object[] {
                     row.longValue("gameId"),
-                    seasonStartYear(gameDate),
+                    NbaSeasonResolver.seasonStartYear(gameDate),
                     timestamp(gameDateTime),
                     date(gameDate),
                     homeTeamId,
@@ -545,13 +547,6 @@ public class HistoricalDataImportService {
             return null;
         }
         return LocalDateTime.parse(value.substring(0, 19).replace('T', ' '), DATE_TIME);
-    }
-
-    private static Integer seasonStartYear(LocalDate gameDate) {
-        if (gameDate == null) {
-            return null;
-        }
-        return gameDate.getMonthValue() >= 7 ? gameDate.getYear() : gameDate.getYear() - 1;
     }
 
     private static Integer positiveOrNull(Integer value) {

@@ -204,14 +204,14 @@ class RedisIntegrationTests {
 
         @Override
         public Map<String, Object> modelMetrics() {
-            return Map.of("modelVersion", "player-baseline-v1", "trainedRows", 30034);
+            return Map.of("modelVersion", "player-baseline-v2", "trainedRows", 30034);
         }
 
         @Override
         public Map<String, Object> modelVersions() {
             return Map.of(
                     "activeModel", Map.of(
-                            "versionName", "player-baseline-v1",
+                            "versionName", "player-baseline-v2",
                             "modelType", "ridge-regression"),
                     "gameScoreModel", Map.of(
                             "versionName", "game-score-baseline-v1",
@@ -234,7 +234,7 @@ class RedisIntegrationTests {
         private static PlayerPredictionResponse prediction(PlayerPredictionRequest request) {
             return new PlayerPredictionResponse(
                     null,
-                    "player-baseline-v1",
+                    "player-baseline-v2",
                     30034,
                     request.gameId(),
                     request.playerId(),
@@ -243,6 +243,12 @@ class RedisIntegrationTests {
                     6.2,
                     5.4,
                     31.0,
+                    1.3,
+                    0.4,
+                    2.1,
+                    7.2,
+                    15.4,
+                    0.47,
                     35.4,
                     30.1,
                     40.7,

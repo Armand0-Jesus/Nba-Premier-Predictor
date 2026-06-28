@@ -81,7 +81,8 @@ public class PlayerFeatureSnapshotService {
         List<PlayerFeatureRow> rows = jdbcTemplate.query("""
                 select s.game_id, s.player_id, s.team_id, s.opponent_team_id, g.season_start_year,
                        g.game_date_time_est, s.home, s.num_minutes, s.points, s.rebounds_total,
-                       s.assists, s.turnovers, s.steals, s.blocks, p.birth_date, p.from_year,
+                       s.assists, s.turnovers, s.steals, s.blocks, s.field_goals_made,
+                       s.field_goals_attempted, p.birth_date, p.from_year,
                        count(*) over (
                            partition by s.player_id
                            order by g.game_date_time_est, s.game_id
@@ -166,6 +167,8 @@ public class PlayerFeatureSnapshotService {
                 nullableInt(rs, "turnovers"),
                 nullableInt(rs, "steals"),
                 nullableInt(rs, "blocks"),
+                nullableInt(rs, "field_goals_made"),
+                nullableInt(rs, "field_goals_attempted"),
                 nullableDate(rs, "birth_date"),
                 nullableInt(rs, "from_year"),
                 nullableInt(rs, "career_games_played_before_game"),
@@ -214,6 +217,8 @@ public class PlayerFeatureSnapshotService {
                 row.turnovers(),
                 row.steals(),
                 row.blocks(),
+                row.fieldGoalsMade(),
+                row.fieldGoalsAttempted(),
                 row.birthDate(),
                 row.fromYear(),
                 row.careerGamesPlayedBeforeGame(),
