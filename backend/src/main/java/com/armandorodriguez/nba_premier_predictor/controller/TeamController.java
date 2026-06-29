@@ -14,8 +14,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.armandorodriguez.nba_premier_predictor.dto.TeamDashboardResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamGameLogResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.TeamProjectionResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.RosterImpactResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.SeasonResponse;
+import com.armandorodriguez.nba_premier_predictor.service.StandingsProjectionService;
 import com.armandorodriguez.nba_premier_predictor.service.TeamService;
 
 @Validated
@@ -24,9 +27,11 @@ import com.armandorodriguez.nba_premier_predictor.service.TeamService;
 public class TeamController {
 
     private final TeamService teamService;
+    private final StandingsProjectionService standingsProjectionService;
 
-    public TeamController(TeamService teamService) {
+    public TeamController(TeamService teamService, StandingsProjectionService standingsProjectionService) {
         this.teamService = teamService;
+        this.standingsProjectionService = standingsProjectionService;
     }
 
     @GetMapping
@@ -59,5 +64,15 @@ public class TeamController {
     @GetMapping("/{teamId}/seasons")
     List<SeasonResponse> seasons(@PathVariable Long teamId) {
         return teamService.seasons(teamId);
+    }
+
+    @GetMapping("/{teamId}/projection")
+    TeamProjectionResponse projection(@PathVariable Long teamId, @RequestParam(required = false) Integer season) {
+        return standingsProjectionService.teamProjection(teamId, season);
+    }
+
+    @GetMapping("/{teamId}/roster-impact")
+    RosterImpactResponse rosterImpact(@PathVariable Long teamId, @RequestParam(required = false) Integer season) {
+        return standingsProjectionService.rosterImpact(teamId, season);
     }
 }

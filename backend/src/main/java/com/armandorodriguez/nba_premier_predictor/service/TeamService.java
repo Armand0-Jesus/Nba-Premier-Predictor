@@ -33,6 +33,10 @@ public class TeamService {
             1610612757L, 1610612758L, 1610612759L, 1610612760L, 1610612761L,
             1610612762L, 1610612763L, 1610612764L, 1610612765L, 1610612766L);
 
+    static Set<Long> currentNbaTeamIds() {
+        return CURRENT_NBA_TEAM_IDS;
+    }
+
     private final TeamRepository teamRepository;
     private final TeamGameStatsRepository statsRepository;
     private final GameRepository gameRepository;

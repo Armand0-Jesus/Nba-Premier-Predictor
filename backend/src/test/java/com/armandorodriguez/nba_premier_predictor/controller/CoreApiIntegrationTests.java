@@ -3,6 +3,7 @@ package com.armandorodriguez.nba_premier_predictor.controller;
 import static org.hamcrest.Matchers.hasSize;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.cache.CacheManager;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,6 +29,9 @@ class CoreApiIntegrationTests {
 
     @Autowired
     private CacheManager cacheManager;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void clearCaches() {
@@ -249,5 +254,90 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.awayPlayers", hasSize(1)))
                 .andExpect(jsonPath("$.homePlayers[0].playerName").value("Stephen Curry"))
                 .andExpect(jsonPath("$.awayPlayers[0].playerName").value("LeBron James"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into transactions (player_id, from_team_id, to_team_id, transaction_type, transaction_date, source, notes) values (2544, 1610612747, 1610612744, 'trade', '2024-07-01', 'test', 'Phase 11 roster impact')",
+                    "insert into draft_picks (player_id, team_id, draft_year, draft_round, draft_number, rookie_season_start_year) values (null, 1610612747, 2024, 1, 10, 2024)",
+                    "insert into injury_reports (report_date, game_date, team_id, player_id, injury_status, reason, source, confidence) values ('2024-07-02', null, 1610612744, 201939, 'questionable', 'ankle', 'test', 0.8000)"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void standingsProjectionWorksBeforeScheduleReleaseAndPersistsRows() throws Exception {
+        mockMvc.perform(get("/api/standings/projections/2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.seasonStartYear").value(2024))
+                .andExpect(jsonPath("$.scheduleAvailable").value(false))
+                .andExpect(jsonPath("$.projectionMethod").value("Schedule-free team strength projection"))
+                .andExpect(jsonPath("$.easternConference", hasSize(0)))
+                .andExpect(jsonPath("$.westernConference", hasSize(2)))
+                .andExpect(jsonPath("$.westernConference[0].teamId").value(1610612744))
+                .andExpect(jsonPath("$.westernConference[0].topReasons[0]").value("Previous season record: 2-0"));
+
+        assertThat(countRows("standings_projections")).isEqualTo(2);
+        assertThat(countRows("team_strength_ratings")).isEqualTo(2);
+        assertThat(countRows("team_context_snapshots")).isEqualTo(2);
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, game_type, game_label, arena_name, arena_city, arena_state) values (22400001, 2024, '2024-10-22 22:00:00', '2024-10-22', 1610612744, 1610612747, 'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 'Regular Season', 'Regular Season', 'Chase Center', 'San Francisco', 'CA')"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void standingsProjectionUsesScheduleWhenTargetSeasonGamesExist() throws Exception {
+        mockMvc.perform(get("/api/standings/projections/2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduleAvailable").value(true))
+                .andExpect(jsonPath("$.projectionMethod").value("Schedule-aware team strength projection"))
+                .andExpect(jsonPath("$.westernConference", hasSize(2)))
+                .andExpect(jsonPath("$.westernConference[0].topReasons[0]").value("Schedule context included for 1 listed game"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into transactions (player_id, from_team_id, to_team_id, transaction_type, transaction_date, source, notes) values (2544, 1610612747, 1610612744, 'trade', '2024-07-01', 'test', 'Phase 11 roster impact')",
+                    "insert into injury_reports (report_date, game_date, team_id, player_id, injury_status, reason, source, confidence) values ('2024-07-02', null, 1610612744, 201939, 'questionable', 'ankle', 'test', 0.8000)"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void teamProjectionAndRosterImpactExplainConfirmedMovement() throws Exception {
+        mockMvc.perform(get("/api/teams/1610612744/projection").param("season", "2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.teamId").value(1610612744))
+                .andExpect(jsonPath("$.sourceSeasonStartYear").value(2023))
+                .andExpect(jsonPath("$.projectedWins").isNumber())
+                .andExpect(jsonPath("$.rosterImpactScore").isNumber());
+
+        mockMvc.perform(get("/api/teams/1610612744/roster-impact").param("season", "2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.playersAdded").value(1))
+                .andExpect(jsonPath("$.playersLost").value(0))
+                .andExpect(jsonPath("$.injuryFlagCount").value(1))
+                .andExpect(jsonPath("$.explanations[0]").value("1 confirmed roster addition"));
+    }
+
+    @Test
+    void standingsSimulationPersistsRunAndProjectedRecords() throws Exception {
+        mockMvc.perform(post("/api/standings/simulate")
+                        .param("season", "2024")
+                        .param("runs", "100"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.simulationRunId").isNumber())
+                .andExpect(jsonPath("$.seasonStartYear").value(2024))
+                .andExpect(jsonPath("$.runCount").value(100))
+                .andExpect(jsonPath("$.scheduleAvailable").value(false))
+                .andExpect(jsonPath("$.projectedRecords", hasSize(2)));
+
+        assertThat(countRows("season_simulation_runs")).isEqualTo(1);
+        assertThat(countRows("projected_team_records")).isEqualTo(2);
+    }
+
+    private Integer countRows(String tableName) {
+        return jdbcTemplate.queryForObject("select count(*) from " + tableName, Integer.class);
     }
 }
