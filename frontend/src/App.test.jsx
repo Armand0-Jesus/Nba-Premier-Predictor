@@ -187,6 +187,39 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.queryByText('12300001')).not.toBeInTheDocument();
   });
 
+  test('standings page shows next-season projections without raw ids', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/standings');
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Standings Projection' })).toBeInTheDocument();
+    expect(await screen.findByText('Western Conference')).toBeInTheDocument();
+    expect(screen.getByText('Golden State Warriors')).toBeInTheDocument();
+    expect(screen.getByText('Not released')).toBeInTheDocument();
+    expect(screen.getByText('Using team strength')).toBeInTheDocument();
+    expect(screen.getByText('Previous season record: 48-34')).toBeInTheDocument();
+    expect(screen.queryByText('1610612744')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Run Range/i }));
+    expect(await screen.findByText('Latest Range Run')).toBeInTheDocument();
+    expect(screen.getByText(/Schedule-free Monte Carlo/i)).toBeInTheDocument();
+    expect(window.fetch).toHaveBeenCalledWith('/api/standings/simulate?season=2026&runs=1000', expect.objectContaining({ method: 'POST' }));
+  });
+
+  test('team projection page explains roster movement naturally', async () => {
+    window.history.pushState({}, '', '/teams/1610612744/projection?season=2026');
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Golden State Warriors' })).toBeInTheDocument();
+    expect(screen.getByText('Projected Record')).toBeInTheDocument();
+    expect(screen.getByText('Why The Projection Moved')).toBeInTheDocument();
+    expect(screen.getByText('Previous season record: 48-34')).toBeInTheDocument();
+    expect(screen.getByText('Roster Movement')).toBeInTheDocument();
+    expect(screen.getByText('1 confirmed roster addition')).toBeInTheDocument();
+  });
+
   test('accuracy page does not expose advanced JSON details', async () => {
     const user = userEvent.setup();
     window.history.pushState({}, '', '/model');
@@ -565,6 +598,43 @@ function defaultFetch(path, options = {}) {
     ]));
   }
 
+  if (path === '/api/standings/projections/2026') {
+    return jsonResponse(standingsPayload());
+  }
+
+  if (path === '/api/standings/simulate?season=2026&runs=1000' && options.method === 'POST') {
+    return jsonResponse({
+      simulationRunId: 12,
+      seasonStartYear: 2026,
+      runCount: 1000,
+      scheduleAvailable: false,
+      generatedAt: '2026-06-29T16:00:00Z',
+      notes: 'Schedule-free Monte Carlo projection using team strength and roster context',
+      projectedRecords: standingsPayload().westernConference,
+    });
+  }
+
+  if (path === '/api/teams/1610612744/projection?season=2026') {
+    return jsonResponse(standingsPayload().westernConference[0]);
+  }
+
+  if (path === '/api/teams/1610612744/roster-impact?season=2026') {
+    return jsonResponse({
+      seasonStartYear: 2026,
+      teamId: 1610612744,
+      teamName: 'Golden State Warriors',
+      playersAdded: 1,
+      playersLost: 0,
+      rookieCount: 1,
+      injuryFlagCount: 0,
+      incomingMinutes: 28.4,
+      outgoingMinutes: 0,
+      rosterImpactScore: 1.2,
+      rosterTurnoverScore: 0.13,
+      explanations: ['1 confirmed roster addition', '1 rookie addition'],
+    });
+  }
+
   if (path === '/api/model/metrics') {
     return jsonResponse({
       modelVersion: 'player-baseline-v2',
@@ -669,6 +739,83 @@ function defaultFetch(path, options = {}) {
   }
 
   return jsonResponse({});
+}
+
+function standingsPayload() {
+  return {
+    seasonStartYear: 2026,
+    seasonLabel: '2026-2027',
+    generatedAt: '2026-06-29T16:00:00Z',
+    scheduleAvailable: false,
+    projectionMethod: 'Schedule-free team strength projection',
+    easternConference: [
+      {
+        teamId: 1610612737,
+        teamName: 'Atlanta Hawks',
+        abbreviation: 'ATL',
+        conference: 'Eastern',
+        projectedSeed: 1,
+        projectedWins: 45.1,
+        projectedLosses: 36.9,
+        lowWins: 38,
+        medianWins: 45,
+        highWins: 51,
+        playoffProbability: 0.72,
+        strengthRating: 2.4,
+        rosterImpactScore: 0.2,
+        rosterTurnoverScore: 0.1,
+        injuryRiskScore: 0,
+        sourceSeasonStartYear: 2025,
+        sourceSeasonLabel: '2025-2026',
+        topReasons: ['Previous season record: 43-39'],
+        uncertaintyFactors: ['Normal season variance'],
+      },
+    ],
+    westernConference: [
+      {
+        teamId: 1610612744,
+        teamName: 'Golden State Warriors',
+        abbreviation: 'GSW',
+        conference: 'Western',
+        projectedSeed: 1,
+        projectedWins: 50.4,
+        projectedLosses: 31.6,
+        lowWins: 43,
+        medianWins: 50,
+        highWins: 56,
+        playoffProbability: 0.84,
+        strengthRating: 5.2,
+        rosterImpactScore: 1.2,
+        rosterTurnoverScore: 0.13,
+        injuryRiskScore: 0,
+        sourceSeasonStartYear: 2025,
+        sourceSeasonLabel: '2025-2026',
+        topReasons: ['Previous season record: 48-34', 'Roster movement impact: +1.2 rating points'],
+        uncertaintyFactors: ['Roster turnover adds projection uncertainty'],
+      },
+      {
+        teamId: 1610612747,
+        teamName: 'Los Angeles Lakers',
+        abbreviation: 'LAL',
+        conference: 'Western',
+        projectedSeed: 2,
+        projectedWins: 46.2,
+        projectedLosses: 35.8,
+        lowWins: 39,
+        medianWins: 46,
+        highWins: 52,
+        playoffProbability: 0.76,
+        strengthRating: 3.1,
+        rosterImpactScore: -0.4,
+        rosterTurnoverScore: 0.2,
+        injuryRiskScore: 0.1,
+        sourceSeasonStartYear: 2025,
+        sourceSeasonLabel: '2025-2026',
+        topReasons: ['Previous season record: 45-37'],
+        uncertaintyFactors: ['Normal season variance'],
+      },
+    ],
+  };
 }
 
 function modelMonitoringPayload() {

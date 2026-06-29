@@ -43,6 +43,7 @@ const navItems = [
   { to: '/players', label: 'Players', icon: Users },
   { to: '/teams', label: 'Teams', icon: ShieldCheck },
   { to: '/games', label: 'Games', icon: CalendarDays },
+  { to: '/standings', label: 'Standings', icon: BarChart3 },
   { to: '/predict/player', label: 'Player Pick', icon: Target },
   { to: '/predict/fantasy', label: 'Fantasy Pick', icon: Sparkles },
   { to: '/predict/game-score', label: 'Score Pick', icon: Trophy },
@@ -64,9 +65,11 @@ function App() {
           <Route path="/players" element={<PlayersPage />} />
           <Route path="/players/:playerId" element={<PlayerDetailPage />} />
           <Route path="/teams" element={<TeamsPage />} />
+          <Route path="/teams/:teamId/projection" element={<TeamProjectionPage />} />
           <Route path="/teams/:teamId" element={<TeamDetailPage />} />
           <Route path="/games" element={<GamesPage />} />
           <Route path="/games/:gameId" element={<GameDetailPage />} />
+          <Route path="/standings" element={<StandingsPage />} />
           <Route path="/predict/player" element={<PlayerPredictionPage mode="player" />} />
           <Route path="/predict/fantasy" element={<PlayerPredictionPage mode="fantasy" />} />
           <Route path="/predict/game-score" element={<GameScorePredictionPage />} />
@@ -106,6 +109,9 @@ function Landing() {
             </IconLink>
             <IconLink to="/games" icon={CalendarDays} variant="ghost">
               Games
+            </IconLink>
+            <IconLink to="/standings" icon={BarChart3} variant="ghost">
+              Standings
             </IconLink>
           </div>
         </div>
@@ -252,6 +258,134 @@ function GamesPage() {
         />
         <Pager page={page} setPage={setPage} last={result.data?.last} />
       </section>
+    </Page>
+  );
+}
+
+function StandingsPage() {
+  const [season, setSeason] = useState(String(currentSeasonStartYear() + 1));
+  const [simulating, setSimulating] = useState(false);
+  const [simulation, setSimulation] = useState(null);
+  const [simulationError, setSimulationError] = useState('');
+  const result = useApi(`/api/standings/projections/${encodeURIComponent(season)}`);
+  const data = result.data;
+  const easternRows = data?.easternConference || [];
+  const westernRows = data?.westernConference || [];
+
+  async function runSimulation() {
+    setSimulating(true);
+    setSimulationError('');
+    try {
+      setSimulation(await apiPost(`/api/standings/simulate?season=${encodeURIComponent(season)}&runs=1000`));
+    } catch (err) {
+      setSimulationError(friendlyError(err) || 'Season range could not be simulated right now');
+    } finally {
+      setSimulating(false);
+    }
+  }
+
+  return (
+    <Page title="Standings Projection" eyebrow="next season">
+      <ErrorBanner message={result.error || simulationError} />
+      <section className="panel">
+        <div className="toolbar">
+          <Field label="Season">
+            <input
+              value={season}
+              onChange={(event) => {
+                setSeason(event.target.value.replace(/\D/g, '').slice(0, 4));
+                setSimulation(null);
+              }}
+              placeholder="2026"
+            />
+          </Field>
+          <button className="icon-button primary" type="button" onClick={runSimulation} disabled={simulating || !season}>
+            {simulating ? <Loader2 size={17} className="spin" /> : <BarChart3 size={17} />}
+            <span>Run Range</span>
+          </button>
+        </div>
+        <div className="dashboard-grid">
+          <StatusPanel title="Season" value={data?.seasonLabel || seasonLabel(season)} icon={CalendarDays} />
+          <StatusPanel
+            title="Schedule"
+            value={data?.scheduleAvailable ? 'Released' : 'Not released'}
+            subvalue={data?.scheduleAvailable ? 'Using schedule context' : 'Using team strength'}
+            icon={Trophy}
+          />
+          <StatusPanel
+            title="Teams"
+            value={compactNumber(easternRows.length + westernRows.length, 0)}
+            subvalue={simulation ? `${simulation.runCount} season ranges` : 'Current NBA teams'}
+            icon={ShieldCheck}
+          />
+        </div>
+      </section>
+      <section className="split">
+        <ProjectionTable title="Eastern Conference" rows={easternRows} season={season} />
+        <ProjectionTable title="Western Conference" rows={westernRows} season={season} />
+      </section>
+      {simulation && (
+        <section className="panel panel-wide">
+          <PanelHeader title="Latest Range Run" icon={Gauge} />
+          <p className="quiet-copy">{simulation.notes}</p>
+          <DataTable
+            rows={simulation.projectedRecords || []}
+            columns={[
+              ['projectedSeed', 'Seed', (_, row) => `#${row.projectedSeed}`],
+              ['teamName', 'Team', (_, row) => <ProjectionTeam team={row} />],
+              ['projectedWins', 'Wins', (_, row) => compactNumber(row.projectedWins)],
+              ['lowWins', 'Range', (_, row) => winRangeText(row)],
+            ]}
+            empty="No range run yet"
+          />
+        </section>
+      )}
+    </Page>
+  );
+}
+
+function TeamProjectionPage() {
+  const { teamId } = useParams();
+  const [searchParams] = useSearchParams();
+  const season = searchParams.get('season') || String(currentSeasonStartYear() + 1);
+  const projection = useApi(`/api/teams/${teamId}/projection?season=${encodeURIComponent(season)}`);
+  const impact = useApi(`/api/teams/${teamId}/roster-impact?season=${encodeURIComponent(season)}`);
+  const row = projection.data;
+  const impactData = impact.data;
+
+  return (
+    <Page title={row?.teamName || 'Team Projection'} eyebrow="season outlook">
+      <ErrorBanner message={projection.error || impact.error} />
+      {row && (
+        <>
+          <div className="dashboard-grid">
+            <StatusPanel title="Projected Record" value={`${scoreNumber(row.projectedWins)}-${scoreNumber(row.projectedLosses)}`} icon={Trophy} />
+            <StatusPanel title="Win Range" value={winRangeText(row)} icon={Gauge} />
+            <StatusPanel title="Playoff Chance" value={percent(row.playoffProbability)} icon={ShieldCheck} />
+          </div>
+          <section className="split">
+            <section className="panel">
+              <PanelHeader title="Why The Projection Moved" icon={BarChart3} />
+              <ReasonList rows={row.topReasons} />
+            </section>
+            <section className="panel">
+              <PanelHeader title="What Could Swing It" icon={Sparkles} />
+              <ReasonList rows={row.uncertaintyFactors} />
+            </section>
+          </section>
+        </>
+      )}
+      {impactData && (
+        <section className="panel panel-wide">
+          <PanelHeader title="Roster Movement" icon={Users} />
+          <div className="dashboard-grid">
+            <StatusPanel title="Added" value={compactNumber(impactData.playersAdded, 0)} icon={Users} />
+            <StatusPanel title="Lost" value={compactNumber(impactData.playersLost, 0)} icon={Users} />
+            <StatusPanel title="Rookies" value={compactNumber(impactData.rookieCount, 0)} icon={Sparkles} />
+          </div>
+          <ReasonList rows={impactData.explanations} />
+        </section>
+      )}
     </Page>
   );
 }
@@ -960,6 +1094,57 @@ function ChoiceList({ title, rows, loading, empty, selectedId, getId, getTitle, 
   );
 }
 
+function ProjectionTable({ title, rows, season }) {
+  return (
+    <section className="panel">
+      <PanelHeader title={title} icon={BarChart3} />
+      <DataTable
+        rows={rows}
+        columns={[
+          ['projectedSeed', 'Seed', (_, row) => `#${row.projectedSeed}`],
+          ['teamName', 'Team', (_, row) => <ProjectionTeam team={row} />],
+          ['projectedWins', 'Wins', (_, row) => compactNumber(row.projectedWins)],
+          ['lowWins', 'Range', (_, row) => winRangeText(row)],
+          ['playoffProbability', 'Playoff Chance', percent],
+          ['topReasons', 'Why', (_, row) => row.topReasons?.[0] || 'Steady team profile'],
+        ]}
+        action={(row) => (
+          <Link to={`/teams/${row.teamId}/projection?season=${encodeURIComponent(season)}`} className="mini-link">
+            Details
+          </Link>
+        )}
+        empty="No projection yet"
+      />
+    </section>
+  );
+}
+
+function ProjectionTeam({ team }) {
+  return (
+    <span className="identity-cell">
+      <TeamLogo team={{ id: team.teamId, fullName: team.teamName }} />
+      <span>
+        <strong>{cleanName(team.teamName)}</strong>
+        <em>{team.abbreviation || team.conference || 'NBA'}</em>
+      </span>
+    </span>
+  );
+}
+
+function ReasonList({ rows = [] }) {
+  const cleanRows = rows.filter(Boolean);
+  if (!cleanRows.length) {
+    return <EmptyState label="No major swing factors listed" />;
+  }
+  return (
+    <div className="reason-list">
+      {cleanRows.map((row) => (
+        <span key={row}>{row}</span>
+      ))}
+    </div>
+  );
+}
+
 function MetricsBlock({ title, evaluation }) {
   const rows = metricRows(evaluation?.metrics);
   const baselineRows = baselineMetricRows(evaluation?.baseline_metrics || evaluation?.baselineMetrics);
@@ -1646,6 +1831,11 @@ function teamRecordText(record) {
 function teamWinRateText(record) {
   if (!record) return 'Not listed';
   return percent(record.winPercentage);
+}
+
+function winRangeText(row) {
+  if (!row) return 'Range not listed';
+  return `${scoreNumber(row.lowWins)}-${scoreNumber(row.highWins)}`;
 }
 
 function seasonLabel(value) {
