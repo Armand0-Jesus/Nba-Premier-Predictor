@@ -2,9 +2,11 @@ package com.armandorodriguez.nba_premier_predictor.service;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -12,6 +14,7 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.armandorodriguez.nba_premier_predictor.dto.ModelRetrainRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest;
@@ -74,6 +77,34 @@ class HttpMlPredictionClient implements MlPredictionClient {
         postMap("/evaluate/player-baseline");
         postMap("/evaluate/game-score");
         return modelMetrics();
+    }
+
+    @Override
+    public Map<String, Object> evaluateModels(ModelRetrainRequest request) {
+        postMap("/evaluate/player-baseline" + trainingQuery(request, null, null));
+        postMap("/evaluate/game-score" + trainingQuery(request, null, null));
+        return modelMetrics();
+    }
+
+    @Override
+    public Map<String, Object> trainPlayerModel(ModelRetrainRequest request, String versionName, boolean activate) {
+        return postMap("/train/player" + trainingQuery(request, versionName, activate));
+    }
+
+    @Override
+    public Map<String, Object> trainGameScoreModel(ModelRetrainRequest request, String versionName, boolean activate) {
+        return postMap("/train/game-score" + trainingQuery(request, versionName, activate));
+    }
+
+    @Override
+    public Map<String, Object> promoteModel(String modelType, String artifactPath) {
+        try {
+            HttpResponse<String> response = send("POST", "/model/promote", promoteBody(modelType, artifactPath));
+            return objectMapper.readValue(response.body(), new TypeReference<>() {
+            });
+        } catch (JsonProcessingException ex) {
+            throw new MlServiceException("Could not parse ML promotion response", ex);
+        }
     }
 
     private PlayerPredictionResponse postPrediction(String path, PlayerPredictionRequest request) {
@@ -141,6 +172,59 @@ class HttpMlPredictionClient implements MlPredictionClient {
         } catch (JsonProcessingException ex) {
             throw new MlServiceException("Could not serialize ML prediction request", ex);
         }
+    }
+
+    private String trainingQuery(ModelRetrainRequest request, String versionName, Boolean activate) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (request != null) {
+            if (request.startSeason() != null) {
+                params.put("startSeason", request.startSeason());
+            }
+            if (request.endSeason() != null) {
+                params.put("endSeason", request.endSeason());
+            }
+            if (request.limit() != null) {
+                params.put("limit", request.limit());
+            }
+            if (request.trainRatio() != null) {
+                params.put("train_ratio", request.trainRatio());
+            }
+            if (request.recencyHalflifeDays() != null) {
+                params.put("recencyHalflifeDays", request.recencyHalflifeDays());
+            }
+        }
+        if (versionName != null && !versionName.isBlank()) {
+            params.put("versionName", versionName);
+        }
+        if (activate != null) {
+            params.put("activate", activate);
+        }
+        if (params.isEmpty()) {
+            return "";
+        }
+        StringBuilder query = new StringBuilder("?");
+        params.forEach((key, value) -> {
+            if (query.length() > 1) {
+                query.append("&");
+            }
+            query.append(encode(key)).append("=").append(encode(String.valueOf(value)));
+        });
+        return query.toString();
+    }
+
+    private String promoteBody(String modelType, String artifactPath) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model_type", modelType);
+        body.put("artifact_path", artifactPath);
+        try {
+            return objectMapper.writeValueAsString(body);
+        } catch (JsonProcessingException ex) {
+            throw new MlServiceException("Could not serialize ML promotion request", ex);
+        }
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private String gameScorePredictionBody(TeamScorePredictionRequest request) {

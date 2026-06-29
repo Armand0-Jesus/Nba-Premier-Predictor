@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
+import com.armandorodriguez.nba_premier_predictor.dto.ModelRetrainRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest;
@@ -221,6 +222,34 @@ class RedisIntegrationTests {
         @Override
         public Map<String, Object> evaluateModels() {
             return modelMetrics();
+        }
+
+        @Override
+        public Map<String, Object> evaluateModels(ModelRetrainRequest request) {
+            return modelMetrics();
+        }
+
+        @Override
+        public Map<String, Object> trainPlayerModel(ModelRetrainRequest request, String versionName, boolean activate) {
+            return Map.of(
+                    "model_version", versionName,
+                    "trained_rows", 100,
+                    "artifact_path", "artifacts/candidates/" + versionName + ".joblib");
+        }
+
+        @Override
+        public Map<String, Object> trainGameScoreModel(ModelRetrainRequest request, String versionName, boolean activate) {
+            return Map.of(
+                    "model_version", versionName,
+                    "trained_rows", 50,
+                    "artifact_path", "artifacts/candidates/" + versionName + ".joblib");
+        }
+
+        @Override
+        public Map<String, Object> promoteModel(String modelType, String artifactPath) {
+            return Map.of(
+                    "model_type", modelType,
+                    "artifact_path", artifactPath);
         }
 
         void reset() {

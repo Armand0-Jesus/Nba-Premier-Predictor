@@ -20,6 +20,10 @@ DEFAULT_ARTIFACT_PATH = Path(__file__).resolve().parents[1] / "artifacts" / "pla
 MODEL_ARTIFACT_PATH = Path(os.getenv("MODEL_ARTIFACT_PATH", str(DEFAULT_ARTIFACT_PATH)))
 DEFAULT_GAME_SCORE_ARTIFACT_PATH = Path(__file__).resolve().parents[1] / "artifacts" / "game_score_baseline.joblib"
 GAME_SCORE_ARTIFACT_PATH = Path(os.getenv("GAME_SCORE_ARTIFACT_PATH", str(DEFAULT_GAME_SCORE_ARTIFACT_PATH)))
+CANDIDATE_ARTIFACT_DIR = Path(os.getenv(
+    "CANDIDATE_ARTIFACT_DIR",
+    str(Path(__file__).resolve().parents[1] / "artifacts" / "candidates"),
+))
 PLAYER_METRICS_PATH = Path(os.getenv(
     "PLAYER_METRICS_PATH",
     str(MODEL_ARTIFACT_PATH.with_name("player_metrics.json")),
@@ -137,6 +141,18 @@ class EvaluationResponse(BaseModel):
     baseline_metrics: dict[str, dict[str, dict[str, float]]] = Field(default_factory=dict)
 
 
+class PromoteModelRequest(BaseModel):
+    model_type: str
+    artifact_path: str
+
+
+class PromoteModelResponse(BaseModel):
+    model_type: str
+    model_version: str
+    trained_rows: int
+    artifact_path: str
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     player_model: PlayerBaselineModel = app.state.player_model
@@ -159,7 +175,9 @@ def train_player_baseline(
         start_season: Annotated[int | None, Query(alias="startSeason")] = None,
         end_season: Annotated[int | None, Query(alias="endSeason")] = None,
         limit: Annotated[int, Query(ge=1, le=MAX_TRAINING_ROWS)] = DEFAULT_TRAINING_ROWS,
-        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS) -> TrainingResponse:
+        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS,
+        version_name: Annotated[str | None, Query(alias="versionName")] = None,
+        activate: bool = True) -> TrainingResponse:
     validate_training_window(season, start_season, end_season)
     rows = fetch_player_training_rows(season, limit, start_season, end_season)
     try:
@@ -167,12 +185,16 @@ def train_player_baseline(
     except ValueError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
 
-    model.save(MODEL_ARTIFACT_PATH)
-    app.state.player_model = model
+    if version_name:
+        model.model_version = version_name
+    artifact_path = MODEL_ARTIFACT_PATH if activate else candidate_artifact_path("player", model.model_version)
+    model.save(artifact_path)
+    if activate:
+        app.state.player_model = model
     return TrainingResponse(
         model_version=model.model_version,
         trained_rows=model.trained_rows,
-        artifact_path=str(MODEL_ARTIFACT_PATH),
+        artifact_path=str(artifact_path),
         season=season,
         start_season=start_season,
         end_season=end_season,
@@ -186,7 +208,9 @@ def train_game_score_baseline(
         start_season: Annotated[int | None, Query(alias="startSeason")] = None,
         end_season: Annotated[int | None, Query(alias="endSeason")] = None,
         limit: Annotated[int, Query(ge=1, le=MAX_TRAINING_ROWS)] = DEFAULT_TRAINING_ROWS,
-        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS) -> TrainingResponse:
+        recency_halflife_days: Annotated[float | None, Query(alias="recencyHalflifeDays", ge=0)] = DEFAULT_RECENCY_HALFLIFE_DAYS,
+        version_name: Annotated[str | None, Query(alias="versionName")] = None,
+        activate: bool = True) -> TrainingResponse:
     validate_training_window(season, start_season, end_season)
     rows = fetch_game_score_training_rows(season, limit, start_season, end_season)
     try:
@@ -194,12 +218,16 @@ def train_game_score_baseline(
     except ValueError as ex:
         raise HTTPException(status_code=400, detail=str(ex)) from ex
 
-    model.save(GAME_SCORE_ARTIFACT_PATH)
-    app.state.game_score_model = model
+    if version_name:
+        model.model_version = version_name
+    artifact_path = GAME_SCORE_ARTIFACT_PATH if activate else candidate_artifact_path("game-score", model.model_version)
+    model.save(artifact_path)
+    if activate:
+        app.state.game_score_model = model
     return TrainingResponse(
         model_version=model.model_version,
         trained_rows=model.trained_rows,
-        artifact_path=str(GAME_SCORE_ARTIFACT_PATH),
+        artifact_path=str(artifact_path),
         season=season,
         start_season=start_season,
         end_season=end_season,
@@ -361,6 +389,41 @@ def model_versions() -> dict[str, Any]:
             "recencyHalflifeDays": game_score_model.recency_halflife_days,
         }
     }
+
+
+@app.get("/model/active")
+def active_models() -> dict[str, Any]:
+    return model_versions()
+
+
+@app.post("/model/promote", response_model=PromoteModelResponse)
+def promote_model(request: PromoteModelRequest) -> PromoteModelResponse:
+    artifact_path = Path(request.artifact_path)
+    if request.model_type == "player":
+        model = PlayerBaselineModel.load(artifact_path)
+        if model.trained_rows <= 0:
+            raise HTTPException(status_code=400, detail="Player artifact is not a trained compatible model")
+        model.save(MODEL_ARTIFACT_PATH)
+        app.state.player_model = model
+        return PromoteModelResponse(
+            model_type="player",
+            model_version=model.model_version,
+            trained_rows=model.trained_rows,
+            artifact_path=str(MODEL_ARTIFACT_PATH),
+        )
+    if request.model_type in {"gameScore", "game-score", "game_score"}:
+        model = GameScoreBaselineModel.load(artifact_path)
+        if model.trained_rows <= 0:
+            raise HTTPException(status_code=400, detail="Game-score artifact is not a trained compatible model")
+        model.save(GAME_SCORE_ARTIFACT_PATH)
+        app.state.game_score_model = model
+        return PromoteModelResponse(
+            model_type="gameScore",
+            model_version=model.model_version,
+            trained_rows=model.trained_rows,
+            artifact_path=str(GAME_SCORE_ARTIFACT_PATH),
+        )
+    raise HTTPException(status_code=400, detail="model_type must be player or gameScore")
 
 
 def validate_training_window(season: int | None, start_season: int | None, end_season: int | None) -> None:
@@ -560,3 +623,8 @@ def model_health(model: PlayerBaselineModel | GameScoreBaselineModel) -> dict[st
         "trainedRows": model.trained_rows,
         "recencyHalflifeDays": model.recency_halflife_days,
     }
+
+
+def candidate_artifact_path(model_type: str, version_name: str) -> Path:
+    safe_version = "".join(char if char.isalnum() or char in {"-", "_"} else "-" for char in version_name)
+    return CANDIDATE_ARTIFACT_DIR / f"{model_type}_{safe_version}.joblib"

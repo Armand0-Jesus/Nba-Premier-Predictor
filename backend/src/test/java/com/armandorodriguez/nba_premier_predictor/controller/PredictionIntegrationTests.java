@@ -22,6 +22,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.armandorodriguez.nba_premier_predictor.dto.ModelRetrainRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest;
@@ -165,6 +166,37 @@ class PredictionIntegrationTests {
                 .andExpect(jsonPath("$.gameScoreBaseline.metrics.home_team_score.hitThreshold").value(10));
     }
 
+    @Test
+    void retrainRegistersCandidateModelsAndPromotesWhenNoActiveMetricsExist() throws Exception {
+        mockMvc.perform(post("/api/model/retrain")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "startSeason": 2023,
+                                  "endSeason": 2024,
+                                  "limit": 100,
+                                  "triggeredBy": "test"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("completed"))
+                .andExpect(jsonPath("$.playerCandidate.promoted").value(true))
+                .andExpect(jsonPath("$.gameScoreCandidate.promoted").value(true));
+
+        assertThat(countRows("model_training_runs")).isEqualTo(1);
+        assertThat(countRows("model_versions")).isEqualTo(2);
+        assertThat(countRows("model_metrics")).isEqualTo(2);
+        assertThat(countRows("model_promotion_history")).isEqualTo(2);
+
+        mockMvc.perform(get("/api/model/versions/active"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].active").value(true));
+
+        mockMvc.perform(get("/api/model/training-runs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("completed"));
+    }
+
     private Integer countRows(String tableName) {
         return jdbcTemplate.queryForObject("select count(*) from " + tableName, Integer.class);
     }
@@ -269,6 +301,34 @@ class PredictionIntegrationTests {
                     "gameScoreBaseline", Map.of(
                             "metrics", Map.of(
                                     "home_team_score", Map.of("mae", 9.5, "rmse", 12.4, "hitRate", 0.64, "hitThreshold", 10))));
+        }
+
+        @Override
+        public Map<String, Object> evaluateModels(ModelRetrainRequest request) {
+            return evaluateModels();
+        }
+
+        @Override
+        public Map<String, Object> trainPlayerModel(ModelRetrainRequest request, String versionName, boolean activate) {
+            return Map.of(
+                    "model_version", versionName,
+                    "trained_rows", 100,
+                    "artifact_path", "artifacts/candidates/" + versionName + ".joblib");
+        }
+
+        @Override
+        public Map<String, Object> trainGameScoreModel(ModelRetrainRequest request, String versionName, boolean activate) {
+            return Map.of(
+                    "model_version", versionName,
+                    "trained_rows", 50,
+                    "artifact_path", "artifacts/candidates/" + versionName + ".joblib");
+        }
+
+        @Override
+        public Map<String, Object> promoteModel(String modelType, String artifactPath) {
+            return Map.of(
+                    "model_type", modelType,
+                    "artifact_path", artifactPath);
         }
 
         private static PlayerPredictionResponse prediction(PlayerPredictionRequest request) {

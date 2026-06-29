@@ -45,6 +45,8 @@ class MainEndpointTests(unittest.TestCase):
         self.assertIn("/predict/game-score", paths)
         self.assertIn("/model/metrics", paths)
         self.assertIn("/model/versions", paths)
+        self.assertIn("/model/active", paths)
+        self.assertIn("/model/promote", paths)
 
     def test_health_reports_player_and_game_score_model_status(self):
         main.app.state.player_model = PlayerBaselineModel(trained_rows=30)
@@ -131,6 +133,57 @@ class MainEndpointTests(unittest.TestCase):
             self.assertEqual(3, response.trained_rows)
             self.assertTrue(artifact_path.exists())
             self.assertEqual(3, main.app.state.player_model.trained_rows)
+        finally:
+            shutil.rmtree(artifact_dir, ignore_errors=True)
+
+    def test_train_player_candidate_does_not_replace_active_model(self):
+        rows = [
+            training_row(10, 4, 3, 28, 19.3),
+            training_row(20, 6, 5, 32, 36.7),
+            training_row(24, 8, 7, 34, 44.1),
+        ]
+        main.app.state.player_model = PlayerBaselineModel(trained_rows=1, model_version="player-baseline-v2")
+        artifact_dir = Path("unit-test-artifacts")
+        shutil.rmtree(artifact_dir, ignore_errors=True)
+        try:
+            with patch.object(main, "CANDIDATE_ARTIFACT_DIR", artifact_dir):
+                with patch.object(main, "fetch_player_training_rows", return_value=rows):
+                    response = main.train_player_baseline(
+                        season=2023,
+                        limit=3,
+                        version_name="player-baseline-v2-candidate",
+                        activate=False,
+                    )
+
+            self.assertEqual("player-baseline-v2-candidate", response.model_version)
+            self.assertEqual(1, main.app.state.player_model.trained_rows)
+            self.assertTrue(Path(response.artifact_path).exists())
+        finally:
+            shutil.rmtree(artifact_dir, ignore_errors=True)
+
+    def test_promote_player_candidate_loads_artifact_as_active_model(self):
+        artifact_dir = Path("unit-test-artifacts")
+        shutil.rmtree(artifact_dir, ignore_errors=True)
+        candidate_path = artifact_dir / "candidate.joblib"
+        active_path = artifact_dir / "active.joblib"
+        try:
+            model = PlayerBaselineModel.fit([
+                training_row(10, 4, 3, 28, 19.3),
+                training_row(20, 6, 5, 32, 36.7),
+                training_row(24, 8, 7, 34, 44.1),
+            ])
+            model.model_version = "player-baseline-v2-candidate"
+            model.save(candidate_path)
+
+            with patch.object(main, "MODEL_ARTIFACT_PATH", active_path):
+                response = main.promote_model(main.PromoteModelRequest(
+                    model_type="player",
+                    artifact_path=str(candidate_path),
+                ))
+
+            self.assertEqual("player-baseline-v2-candidate", response.model_version)
+            self.assertEqual("player-baseline-v2-candidate", main.app.state.player_model.model_version)
+            self.assertTrue(active_path.exists())
         finally:
             shutil.rmtree(artifact_dir, ignore_errors=True)
 

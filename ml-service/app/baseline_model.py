@@ -145,13 +145,14 @@ class PlayerBaselineModel:
         if not artifact_path.exists():
             return cls()
         artifact = joblib.load(artifact_path)
-        if artifact.get("model_version") != MODEL_VERSION:
+        model_version = artifact.get("model_version", MODEL_VERSION)
+        if not str(model_version).startswith(MODEL_VERSION):
             return cls()
         return cls(
             pipeline=artifact.get("pipeline"),
             fallback_targets=artifact.get("fallback_targets", {}),
             trained_rows=artifact.get("trained_rows", 0),
-            model_version=artifact.get("model_version", MODEL_VERSION),
+            model_version=model_version,
             recency_halflife_days=artifact.get("recency_halflife_days"),
         )
 
