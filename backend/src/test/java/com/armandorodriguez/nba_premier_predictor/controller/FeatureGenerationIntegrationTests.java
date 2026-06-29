@@ -150,7 +150,7 @@ class FeatureGenerationIntegrationTests {
     }
 
     @Test
-    void ensurePlayerFeatureSnapshotGeneratesMissingSeasonSnapshot() throws Exception {
+    void ensurePlayerFeatureSnapshotGeneratesOnlyRequestedSnapshot() throws Exception {
         String responseJson = mockMvc.perform(post("/api/features/player-snapshots/ensure")
                         .param("gameId", "22300003")
                         .param("playerId", "201939"))
@@ -168,10 +168,18 @@ class FeatureGenerationIntegrationTests {
         assertThat(nestedMap(response, "features"))
                 .containsEntry("age_at_game", 35)
                 .doesNotContainKeys("points", "rebounds", "assists", "targets");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from player_feature_snapshots", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*)
+                from player_feature_snapshots
+                where game_id <> 22300003 or player_id <> 201939
+                """, Integer.class))
+                .isZero();
     }
 
     @Test
-    void ensureGameFeatureSnapshotGeneratesMissingSeasonSnapshot() throws Exception {
+    void ensureGameFeatureSnapshotGeneratesOnlyRequestedSnapshot() throws Exception {
         String responseJson = mockMvc.perform(post("/api/features/game-snapshots/ensure")
                         .param("gameId", "22300003"))
                 .andExpect(status().isOk())
@@ -187,6 +195,14 @@ class FeatureGenerationIntegrationTests {
         assertThat(nestedMap(response, "features"))
                 .containsEntry("season_point_differential_delta", 15.0)
                 .doesNotContainKeys("homeScore", "awayScore", "targets");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from game_feature_snapshots", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*)
+                from game_feature_snapshots
+                where game_id <> 22300003
+                """, Integer.class))
+                .isZero();
     }
 
     @Test

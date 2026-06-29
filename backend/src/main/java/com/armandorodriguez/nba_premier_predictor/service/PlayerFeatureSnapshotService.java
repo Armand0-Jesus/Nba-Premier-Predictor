@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.armandorodriguez.nba_premier_predictor.dto.FeatureGenerationResponse;
+import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundException;
 import com.armandorodriguez.nba_premier_predictor.feature.PlayerFeatureCalculator;
 import com.armandorodriguez.nba_premier_predictor.feature.PlayerFeatureRow;
 import com.armandorodriguez.nba_premier_predictor.feature.TeamFeatureRow;
@@ -75,6 +76,29 @@ public class PlayerFeatureSnapshotService {
         return new FeatureGenerationResponse("player", seasonStartYear, batch.size());
     }
 
+    @Transactional
+    public FeatureGenerationResponse generateForGame(Long gameId, Long playerId) {
+        List<PlayerFeatureRow> playerRows = loadPlayerRowsForGame(gameId, playerId);
+        PlayerFeatureRow target = playerRows.stream()
+                .filter(row -> gameId.equals(row.gameId()) && playerId.equals(row.playerId()))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Player game stats not found for game " + gameId + " and player " + playerId));
+        List<PlayerFeatureRow> prior = playerRows.stream()
+                .filter(row -> isBefore(row, target))
+                .toList();
+        LocalDateTime dataCutoff = target.gameDateTime().minusSeconds(1);
+        persist(List.<Object[]>of(new Object[] {
+                Timestamp.valueOf(dataCutoff),
+                target.gameId(),
+                target.playerId(),
+                target.teamId(),
+                Timestamp.valueOf(dataCutoff),
+                toJson(calculator.calculate(target, prior, loadOpponentRowsBefore(target)))
+        }));
+        return new FeatureGenerationResponse("player", target.seasonStartYear(), 1);
+    }
+
     private List<PlayerFeatureRow> loadPlayerRows(Integer seasonStartYear, Integer startSeason, Integer endSeason) {
         List<Object> params = new ArrayList<>();
         String seasonFilter = seasonFilter(seasonStartYear, startSeason, endSeason, params);
@@ -119,6 +143,52 @@ public class PlayerFeatureSnapshotService {
                 .toList();
     }
 
+    private List<PlayerFeatureRow> loadPlayerRowsForGame(Long gameId, Long playerId) {
+        List<PlayerFeatureRow> rows = jdbcTemplate.query("""
+                select s.game_id, s.player_id, s.team_id, s.opponent_team_id, g.season_start_year,
+                       g.game_date_time_est, s.home, s.num_minutes, s.points, s.rebounds_total,
+                       s.assists, s.turnovers, s.steals, s.blocks, s.field_goals_made,
+                       s.field_goals_attempted, p.birth_date, p.from_year,
+                       count(*) over (
+                           partition by s.player_id
+                           order by g.game_date_time_est, s.game_id
+                           rows between unbounded preceding and 1 preceding
+                       ) as career_games_played_before_game,
+                       coalesce(sum(s.num_minutes) over (
+                           partition by s.player_id
+                           order by g.game_date_time_est, s.game_id
+                           rows between unbounded preceding and 1 preceding
+                       ), 0) as career_minutes_played_before_game,
+                       (
+                           select count(*)
+                           from injury_reports injuries
+                           where injuries.player_id = s.player_id
+                             and coalesce(injuries.game_date, injuries.report_date) < g.game_date
+                       ) as injury_history_count_before_game
+                from player_game_stats s
+                join games g on g.game_id = s.game_id
+                join players p on p.player_id = s.player_id
+                join games target_game on target_game.game_id = ?
+                where g.game_date_time_est is not null
+                  and target_game.game_date_time_est is not null
+                  and s.player_id = ?
+                  and g.season_start_year = target_game.season_start_year
+                  and g.game_date_time_est <= target_game.game_date_time_est
+                order by s.player_id, g.game_date_time_est, s.game_id
+                """, this::mapPlayerRow, gameId, playerId);
+        Map<Long, List<RosterContextRow>> rosterRows = loadRosterContextRows().stream()
+                .collect(Collectors.groupingBy(RosterContextRow::teamId, LinkedHashMap::new, Collectors.toList()));
+        rosterRows.values().forEach(teamRows -> teamRows.sort(Comparator.comparing(RosterContextRow::snapshotDate)));
+        List<InjuryContextRow> injuryRows = loadInjuryContextRows();
+        List<TransactionContextRow> transactionRows = loadTransactionContextRows();
+        return rows.stream()
+                .map(row -> withContext(row,
+                        rosterRows.getOrDefault(row.teamId(), List.of()),
+                        injuryRows,
+                        transactionRows))
+                .toList();
+    }
+
     private List<TeamFeatureRow> loadTeamRows(Integer seasonStartYear, Integer startSeason, Integer endSeason) {
         List<Object> params = new ArrayList<>();
         String seasonFilter = seasonFilter(seasonStartYear, startSeason, endSeason, params);
@@ -132,6 +202,24 @@ public class PlayerFeatureSnapshotService {
                 %s
                 order by t.team_id, g.game_date_time_est
                 """.formatted(seasonFilter), this::mapTeamRow, params.toArray());
+    }
+
+    private List<TeamFeatureRow> loadOpponentRowsBefore(PlayerFeatureRow target) {
+        if (target.opponentTeamId() == null) {
+            return List.of();
+        }
+        return jdbcTemplate.query("""
+                select t.game_id, t.team_id, t.opponent_team_id, g.season_start_year,
+                       g.game_date_time_est, t.home, t.team_score, t.opponent_score,
+                       t.assists, t.rebounds_total, t.turnovers
+                from team_game_stats t
+                join games g on g.game_id = t.game_id
+                where g.game_date_time_est is not null
+                  and t.team_id = ?
+                  and g.season_start_year = ?
+                  and g.game_date_time_est < ?
+                order by t.team_id, g.game_date_time_est, t.game_id
+                """, this::mapTeamRow, target.opponentTeamId(), target.seasonStartYear(), Timestamp.valueOf(target.gameDateTime()));
     }
 
     private static String seasonFilter(Integer seasonStartYear, Integer startSeason, Integer endSeason, List<Object> params) {
@@ -446,6 +534,11 @@ public class PlayerFeatureSnapshotService {
         return rows.stream()
                 .filter(row -> row.gameDateTime().isBefore(target.gameDateTime()))
                 .toList();
+    }
+
+    private static boolean isBefore(PlayerFeatureRow row, PlayerFeatureRow target) {
+        return row.gameDateTime().isBefore(target.gameDateTime())
+                || (row.gameDateTime().equals(target.gameDateTime()) && row.gameId() < target.gameId());
     }
 
     private void persist(List<Object[]> batch) {

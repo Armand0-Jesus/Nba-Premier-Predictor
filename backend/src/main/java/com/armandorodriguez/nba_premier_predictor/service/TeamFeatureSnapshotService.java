@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.armandorodriguez.nba_premier_predictor.dto.FeatureGenerationResponse;
+import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundException;
 import com.armandorodriguez.nba_premier_predictor.feature.TeamFeatureCalculator;
 import com.armandorodriguez.nba_premier_predictor.feature.TeamFeatureRow;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -90,33 +91,27 @@ public class TeamFeatureSnapshotService {
                 continue;
             }
 
-            Map<String, Object> homeFeatures = calculator.calculate(home, rowsBefore(byTeam, home), opponentRowsBefore(byTeam, home));
-            Map<String, Object> awayFeatures = calculator.calculate(away, rowsBefore(byTeam, away), opponentRowsBefore(byTeam, away));
-            Map<String, Object> features = new LinkedHashMap<>();
-            features.put("home_team_id", home.teamId());
-            features.put("away_team_id", away.teamId());
-            putPrefixed(features, "home_", homeFeatures);
-            putPrefixed(features, "away_", awayFeatures);
-            features.put("games_played_prior_delta", difference(homeFeatures.get("games_played_prior"), awayFeatures.get("games_played_prior")));
-            features.put("days_rest_delta", difference(homeFeatures.get("days_rest"), awayFeatures.get("days_rest")));
-            features.put("season_point_differential_delta", difference(
-                    homeFeatures.get("season_point_differential_avg"),
-                    awayFeatures.get("season_point_differential_avg")));
-            features.put("last_5_point_differential_delta", difference(
-                    homeFeatures.get("last_5_point_differential_avg"),
-                    awayFeatures.get("last_5_point_differential_avg")));
-
-            LocalDateTime dataCutoff = home.gameDateTime().minusSeconds(1);
-            batch.add(new Object[] {
-                    Timestamp.valueOf(dataCutoff),
-                    entry.getKey(),
-                    Timestamp.valueOf(dataCutoff),
-                    toJson(features)
-            });
+            batch.add(gameSnapshotBatchRow(entry.getKey(), home, away, byTeam));
         }
 
         persistGame(batch);
         return new FeatureGenerationResponse("game", seasonStartYear, batch.size());
+    }
+
+    @Transactional
+    public FeatureGenerationResponse generateGameForGame(Long gameId) {
+        List<TeamFeatureRow> rows = loadTeamRowsForGame(gameId);
+        Map<Long, List<TeamFeatureRow>> byTeam = groupByTeam(rows);
+        List<TeamFeatureRow> targetRows = rows.stream()
+                .filter(row -> gameId.equals(row.gameId()))
+                .toList();
+        TeamFeatureRow home = findByHome(targetRows, true);
+        TeamFeatureRow away = findByHome(targetRows, false);
+        if (home == null || away == null) {
+            throw new ResourceNotFoundException("Game feature rows not found for game " + gameId);
+        }
+        persistGame(List.<Object[]>of(gameSnapshotBatchRow(gameId, home, away, byTeam)));
+        return new FeatureGenerationResponse("game", home.seasonStartYear(), 1);
     }
 
     private List<TeamFeatureRow> loadTeamRows(Integer seasonStartYear, Integer startSeason, Integer endSeason) {
@@ -132,6 +127,31 @@ public class TeamFeatureSnapshotService {
                 %s
                 order by g.game_date_time_est, t.game_id, t.team_id
                 """.formatted(seasonFilter), this::mapTeamRow, params.toArray());
+        Map<Long, List<RosterAgeRow>> rosterRows = loadRosterAgeRows().stream()
+                .collect(Collectors.groupingBy(RosterAgeRow::teamId, LinkedHashMap::new, Collectors.toList()));
+        rosterRows.values().forEach(teamRows -> teamRows.sort(Comparator.comparing(RosterAgeRow::snapshotDate)));
+        List<InjuryContextRow> injuryRows = loadInjuryContextRows();
+        List<TransactionContextRow> transactionRows = loadTransactionContextRows();
+        return rows.stream()
+                .map(row -> withAgeContext(row, rosterRows.getOrDefault(row.teamId(), List.of()), injuryRows, transactionRows))
+                .toList();
+    }
+
+    private List<TeamFeatureRow> loadTeamRowsForGame(Long gameId) {
+        List<TeamFeatureRow> rows = jdbcTemplate.query("""
+                select t.game_id, t.team_id, t.opponent_team_id, g.season_start_year,
+                       g.game_date_time_est, t.home, t.team_score, t.opponent_score,
+                       t.assists, t.rebounds_total, t.turnovers
+                from team_game_stats t
+                join games g on g.game_id = t.game_id
+                join games target_game on target_game.game_id = ?
+                where g.game_date_time_est is not null
+                  and target_game.game_date_time_est is not null
+                  and t.team_id in (target_game.home_team_id, target_game.away_team_id)
+                  and g.season_start_year = target_game.season_start_year
+                  and g.game_date_time_est <= target_game.game_date_time_est
+                order by g.game_date_time_est, t.game_id, t.team_id
+                """, this::mapTeamRow, gameId);
         Map<Long, List<RosterAgeRow>> rosterRows = loadRosterAgeRows().stream()
                 .collect(Collectors.groupingBy(RosterAgeRow::teamId, LinkedHashMap::new, Collectors.toList()));
         rosterRows.values().forEach(teamRows -> teamRows.sort(Comparator.comparing(RosterAgeRow::snapshotDate)));
@@ -459,6 +479,32 @@ public class TeamFeatureSnapshotService {
                 .filter(row -> Boolean.valueOf(home).equals(row.home()))
                 .findFirst()
                 .orElse(null);
+    }
+
+    private Object[] gameSnapshotBatchRow(Long gameId, TeamFeatureRow home, TeamFeatureRow away, Map<Long, List<TeamFeatureRow>> byTeam) {
+        Map<String, Object> homeFeatures = calculator.calculate(home, rowsBefore(byTeam, home), opponentRowsBefore(byTeam, home));
+        Map<String, Object> awayFeatures = calculator.calculate(away, rowsBefore(byTeam, away), opponentRowsBefore(byTeam, away));
+        Map<String, Object> features = new LinkedHashMap<>();
+        features.put("home_team_id", home.teamId());
+        features.put("away_team_id", away.teamId());
+        putPrefixed(features, "home_", homeFeatures);
+        putPrefixed(features, "away_", awayFeatures);
+        features.put("games_played_prior_delta", difference(homeFeatures.get("games_played_prior"), awayFeatures.get("games_played_prior")));
+        features.put("days_rest_delta", difference(homeFeatures.get("days_rest"), awayFeatures.get("days_rest")));
+        features.put("season_point_differential_delta", difference(
+                homeFeatures.get("season_point_differential_avg"),
+                awayFeatures.get("season_point_differential_avg")));
+        features.put("last_5_point_differential_delta", difference(
+                homeFeatures.get("last_5_point_differential_avg"),
+                awayFeatures.get("last_5_point_differential_avg")));
+
+        LocalDateTime dataCutoff = home.gameDateTime().minusSeconds(1);
+        return new Object[] {
+                Timestamp.valueOf(dataCutoff),
+                gameId,
+                Timestamp.valueOf(dataCutoff),
+                toJson(features)
+        };
     }
 
     private void persistTeam(List<Object[]> batch) {

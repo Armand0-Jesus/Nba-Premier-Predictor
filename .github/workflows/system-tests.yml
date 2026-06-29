@@ -6,13 +6,13 @@ on:
       - "backend/**"
       - "ml-service/**"
       - "frontend/**"
-      - ".github/workflows/backend-tests.yml"
+      - ".github/workflows/system-tests.yml"
   pull_request:
     paths:
       - "backend/**"
       - "ml-service/**"
       - "frontend/**"
-      - ".github/workflows/backend-tests.yml"
+      - ".github/workflows/system-tests.yml"
 
 jobs:
   backend-tests:

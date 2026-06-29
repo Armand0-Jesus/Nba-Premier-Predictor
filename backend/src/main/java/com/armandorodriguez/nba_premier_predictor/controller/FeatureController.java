@@ -47,7 +47,7 @@ public class FeatureController {
         try {
             return featureSnapshotQueryService.latestPlayerSnapshot(gameId, playerId);
         } catch (ResourceNotFoundException ex) {
-            playerFeatureSnapshotService.generate(featureSnapshotQueryService.seasonForGame(gameId));
+            playerFeatureSnapshotService.generateForGame(gameId, playerId);
             return featureSnapshotQueryService.latestPlayerSnapshot(gameId, playerId);
         }
     }
@@ -57,7 +57,7 @@ public class FeatureController {
         try {
             return featureSnapshotQueryService.latestGameSnapshot(gameId);
         } catch (ResourceNotFoundException ex) {
-            teamFeatureSnapshotService.generateGame(featureSnapshotQueryService.seasonForGame(gameId));
+            teamFeatureSnapshotService.generateGameForGame(gameId);
             return featureSnapshotQueryService.latestGameSnapshot(gameId);
         }
     }
