@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 import java.util.Map;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,6 +28,7 @@ import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.PlayerPredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionResponse;
+import com.armandorodriguez.nba_premier_predictor.exception.MlServiceException;
 import com.armandorodriguez.nba_premier_predictor.service.MlPredictionClient;
 
 @ActiveProfiles("test")
@@ -40,6 +42,11 @@ class PredictionIntegrationTests {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void resetStub() {
+        StubMlPredictionClient.reset();
+    }
 
     @Test
     void predictsPlayerStatsThroughMlServiceAndStoresHistory() throws Exception {
@@ -181,12 +188,18 @@ class PredictionIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("completed"))
                 .andExpect(jsonPath("$.playerCandidate.promoted").value(true))
-                .andExpect(jsonPath("$.gameScoreCandidate.promoted").value(true));
+                .andExpect(jsonPath("$.playerCandidate.validationSampleSize").value(80))
+                .andExpect(jsonPath("$.gameScoreCandidate.promoted").value(true))
+                .andExpect(jsonPath("$.gameScoreCandidate.validationSampleSize").value(80));
 
         assertThat(countRows("model_training_runs")).isEqualTo(1);
         assertThat(countRows("model_versions")).isEqualTo(2);
         assertThat(countRows("model_metrics")).isEqualTo(2);
+        assertThat(countRows("model_registry")).isEqualTo(2);
         assertThat(countRows("model_promotion_history")).isEqualTo(2);
+        assertThat(activeModelCount("player_stat_fantasy")).isEqualTo(1);
+        assertThat(activeModelCount("game_score")).isEqualTo(1);
+        assertThat(registryStatusCount("active")).isEqualTo(2);
 
         mockMvc.perform(get("/api/model/versions/active"))
                 .andExpect(status().isOk())
@@ -194,7 +207,160 @@ class PredictionIntegrationTests {
 
         mockMvc.perform(get("/api/model/training-runs"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].status").value("completed"));
+                .andExpect(jsonPath("$[0].status").value("completed"))
+                .andExpect(jsonPath("$[0].triggeredBy").value("test"));
+
+        mockMvc.perform(get("/api/model/promotion-history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].promoted").value(true));
+    }
+
+    @Test
+    void promotionArchivesPreviousRegistryRowsAndRollbackRestoresOneActiveModel() throws Exception {
+        mockMvc.perform(post("/api/model/retrain")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "startSeason": 2023,
+                                  "endSeason": 2024,
+                                  "limit": 100,
+                                  "triggeredBy": "test"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        Long originalActiveId = activeModelVersionId("player_stat_fantasy");
+        Long candidateId = insertModelVersion(
+                "player-baseline-v2-better-test",
+                "player_stat_fantasy",
+                "candidate",
+                false);
+        insertMetric(candidateId, "projected_points", 1.2, 1.8, 100);
+        insertRegistry(candidateId, "candidate");
+
+        mockMvc.perform(post("/api/model/promote/{modelVersionId}", candidateId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.promoted").value(true))
+                .andExpect(jsonPath("$.modelVersion.id").value(candidateId));
+
+        assertThat(activeModelVersionId("player_stat_fantasy")).isEqualTo(candidateId);
+        assertThat(activeModelCount("player_stat_fantasy")).isEqualTo(1);
+        assertThat(modelStatus(originalActiveId)).isEqualTo("archived");
+        assertThat(registryStatus(originalActiveId)).isEqualTo("archived");
+        assertThat(registryArchivedAt(originalActiveId)).isNotNull();
+
+        mockMvc.perform(post("/api/model/rollback/{modelVersionId}", originalActiveId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.promoted").value(true))
+                .andExpect(jsonPath("$.modelVersion.id").value(originalActiveId));
+
+        assertThat(activeModelVersionId("player_stat_fantasy")).isEqualTo(originalActiveId);
+        assertThat(activeModelCount("player_stat_fantasy")).isEqualTo(1);
+        assertThat(modelStatus(candidateId)).isEqualTo("archived");
+        assertThat(registryStatus(candidateId)).isEqualTo("archived");
+    }
+
+    @Test
+    void manualPromotionRequiresCandidateMetricsAndEnoughValidationRows() throws Exception {
+        Long missingMetricsCandidateId = insertModelVersion(
+                "player-baseline-v2-missing-metrics-test",
+                "player_stat_fantasy",
+                "candidate",
+                false);
+
+        mockMvc.perform(post("/api/model/promote/{modelVersionId}", missingMetricsCandidateId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Candidate evaluation metrics are required before promotion"));
+
+        Long tinySampleCandidateId = insertModelVersion(
+                "player-baseline-v2-tiny-sample-test",
+                "player_stat_fantasy",
+                "candidate",
+                false);
+        insertMetric(tinySampleCandidateId, "projected_points", 2.4, 3.1, 5);
+
+        mockMvc.perform(post("/api/model/promote/{modelVersionId}", tinySampleCandidateId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Candidate validation sample size is too small for promotion"));
+
+        assertThat(activeModelCount("player_stat_fantasy")).isZero();
+    }
+
+    @Test
+    void retrainRejectsCandidatesWhenEvaluationMetricsAreMissing() throws Exception {
+        StubMlPredictionClient.missingMetrics = true;
+
+        mockMvc.perform(post("/api/model/retrain")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "startSeason": 2023,
+                                  "endSeason": 2024,
+                                  "limit": 100,
+                                  "triggeredBy": "test"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.playerCandidate.promoted").value(false))
+                .andExpect(jsonPath("$.playerCandidate.reason").value("Candidate evaluation metrics were missing"))
+                .andExpect(jsonPath("$.gameScoreCandidate.promoted").value(false))
+                .andExpect(jsonPath("$.gameScoreCandidate.reason").value("Candidate evaluation metrics were missing"));
+
+        assertThat(activeModelCount("player_stat_fantasy")).isZero();
+        assertThat(activeModelCount("game_score")).isZero();
+        assertThat(registryStatusCount("rejected")).isEqualTo(2);
+        assertThat(registryStatusCount("active")).isZero();
+        assertThat(countRows("model_promotion_history")).isEqualTo(2);
+    }
+
+    @Test
+    void retrainRejectsCandidatesWhenValidationSampleIsTooSmall() throws Exception {
+        StubMlPredictionClient.tinySample = true;
+
+        mockMvc.perform(post("/api/model/retrain")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "startSeason": 2023,
+                                  "endSeason": 2024,
+                                  "limit": 100,
+                                  "triggeredBy": "test"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.playerCandidate.promoted").value(false))
+                .andExpect(jsonPath("$.playerCandidate.validationSampleSize").value(5))
+                .andExpect(jsonPath("$.playerCandidate.reason").value("Candidate validation sample size was too small"))
+                .andExpect(jsonPath("$.gameScoreCandidate.promoted").value(false))
+                .andExpect(jsonPath("$.gameScoreCandidate.validationSampleSize").value(5));
+
+        assertThat(activeModelCount("player_stat_fantasy")).isZero();
+        assertThat(activeModelCount("game_score")).isZero();
+        assertThat(registryStatusCount("rejected")).isEqualTo(2);
+        assertThat(countRows("model_promotion_history")).isEqualTo(2);
+    }
+
+    @Test
+    void retrainReturnsClearErrorWhenTrainingDataIsTooSmall() throws Exception {
+        StubMlPredictionClient.failTrainingForSmallData = true;
+
+        mockMvc.perform(post("/api/model/retrain")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "startSeason": 2023,
+                                  "endSeason": 2024,
+                                  "limit": 100,
+                                  "triggeredBy": "test"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Retraining cannot run because there is not enough training data for the selected range"));
+
+        assertThat(countRows("model_training_runs")).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select status from model_training_runs", String.class)).isEqualTo("failed");
+        assertThat(jdbcTemplate.queryForObject("select notes from model_training_runs", String.class))
+                .isEqualTo("Retraining cannot run because there is not enough training data for the selected range");
     }
 
     @Test
@@ -240,6 +406,80 @@ class PredictionIntegrationTests {
 
     private Integer countRows(String tableName) {
         return jdbcTemplate.queryForObject("select count(*) from " + tableName, Integer.class);
+    }
+
+    private Integer activeModelCount(String targetVariable) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from model_versions where target_variable = ? and is_active = true",
+                Integer.class,
+                targetVariable);
+    }
+
+    private Long activeModelVersionId(String targetVariable) {
+        return jdbcTemplate.queryForObject(
+                "select id from model_versions where target_variable = ? and is_active = true",
+                Long.class,
+                targetVariable);
+    }
+
+    private Integer registryStatusCount(String status) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from model_registry where registry_status = ?",
+                Integer.class,
+                status);
+    }
+
+    private String modelStatus(Long modelVersionId) {
+        return jdbcTemplate.queryForObject(
+                "select status from model_versions where id = ?",
+                String.class,
+                modelVersionId);
+    }
+
+    private String registryStatus(Long modelVersionId) {
+        return jdbcTemplate.queryForObject(
+                "select registry_status from model_registry where model_version_id = ?",
+                String.class,
+                modelVersionId);
+    }
+
+    private Object registryArchivedAt(Long modelVersionId) {
+        return jdbcTemplate.queryForObject(
+                "select archived_at from model_registry where model_version_id = ?",
+                Object.class,
+                modelVersionId);
+    }
+
+    private Long insertModelVersion(String versionName, String targetVariable, String status, boolean active) {
+        jdbcTemplate.update("""
+                insert into model_versions (
+                    version_name, model_type, target_variable, trained_at, artifact_path, status, is_active
+                ) values (?, 'ridge-regression', ?, current_timestamp, ?, ?, ?)
+                """,
+                versionName,
+                targetVariable,
+                "artifacts/candidates/" + versionName + ".joblib",
+                status,
+                active);
+        return jdbcTemplate.queryForObject(
+                "select id from model_versions where version_name = ?",
+                Long.class,
+                versionName);
+    }
+
+    private void insertMetric(Long modelVersionId, String targetVariable, double mae, double rmse, int sampleSize) {
+        jdbcTemplate.update("""
+                insert into model_metrics (
+                    model_version_id, target_variable, mae, rmse, validation_sample_size
+                ) values (?, ?, ?, ?, ?)
+                """, modelVersionId, targetVariable, mae, rmse, sampleSize);
+    }
+
+    private void insertRegistry(Long modelVersionId, String status) {
+        jdbcTemplate.update(
+                "insert into model_registry (model_version_id, registry_status) values (?, ?)",
+                modelVersionId,
+                status);
     }
 
     private static String playerRequestJson() {
@@ -290,6 +530,16 @@ class PredictionIntegrationTests {
 
     static class StubMlPredictionClient implements MlPredictionClient {
 
+        static boolean missingMetrics;
+        static boolean tinySample;
+        static boolean failTrainingForSmallData;
+
+        static void reset() {
+            missingMetrics = false;
+            tinySample = false;
+            failTrainingForSmallData = false;
+        }
+
         @Override
         public PlayerPredictionResponse predictPlayer(PlayerPredictionRequest request) {
             return prediction(request);
@@ -333,13 +583,23 @@ class PredictionIntegrationTests {
 
         @Override
         public Map<String, Object> evaluateModels() {
+            if (missingMetrics) {
+                return Map.of(
+                        "modelVersion", "player-baseline-v2",
+                        "trainedRows", 30034,
+                        "playerBaseline", Map.of("testRows", 80, "metrics", Map.of()),
+                        "gameScoreBaseline", Map.of("testRows", 80, "metrics", Map.of()));
+            }
+            int testRows = tinySample ? 5 : 80;
             return Map.of(
                     "modelVersion", "player-baseline-v2",
                     "trainedRows", 30034,
                     "playerBaseline", Map.of(
+                            "testRows", testRows,
                             "metrics", Map.of(
                                     "projected_points", Map.of("mae", 4.5, "rmse", 6.1, "hitRate", 0.72, "hitThreshold", 5))),
                     "gameScoreBaseline", Map.of(
+                            "testRows", testRows,
                             "metrics", Map.of(
                                     "home_team_score", Map.of("mae", 9.5, "rmse", 12.4, "hitRate", 0.64, "hitThreshold", 10))));
         }
@@ -351,6 +611,9 @@ class PredictionIntegrationTests {
 
         @Override
         public Map<String, Object> trainPlayerModel(ModelRetrainRequest request, String versionName, boolean activate) {
+            if (failTrainingForSmallData) {
+                throw new MlServiceException("No complete player training rows were available");
+            }
             return Map.of(
                     "model_version", versionName,
                     "trained_rows", 100,

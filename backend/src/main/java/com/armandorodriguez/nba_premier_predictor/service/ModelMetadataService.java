@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.armandorodriguez.nba_premier_predictor.dto.ModelRetrainRequest;
+import com.armandorodriguez.nba_premier_predictor.exception.MlServiceException;
 import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundException;
 
 @Service
@@ -27,6 +28,7 @@ public class ModelMetadataService {
 
     private static final String DEFAULT_PLAYER_MODEL_VERSION = "player-baseline-v2";
     private static final String DEFAULT_GAME_SCORE_MODEL_VERSION = "game-score-baseline-v2";
+    private static final int MIN_VALIDATION_SAMPLE_SIZE = 30;
 
     private final MlPredictionClient mlPredictionClient;
     private final JdbcTemplate jdbcTemplate;
@@ -146,8 +148,9 @@ public class ModelMetadataService {
             response.put("activeVersions", activeVersions());
             return response;
         } catch (RuntimeException ex) {
-            finishTrainingRun(runId, "failed", ex.getMessage());
-            throw ex;
+            RuntimeException retrainException = retrainException(ex);
+            finishTrainingRun(runId, "failed", retrainException.getMessage());
+            throw retrainException;
         }
     }
 
@@ -188,13 +191,16 @@ public class ModelMetadataService {
         Long previousActiveId = activeModelVersionId(targetVariable);
         Double previousMae = previousActiveId == null ? null : averageStoredMae(previousActiveId);
         Double candidateMae = averageMae(metrics);
-        boolean promoted = previousMae == null || (candidateMae != null && candidateMae < previousMae);
-        String reason = promoted
-                ? "Candidate improved average MAE"
-                : "Candidate did not improve average MAE";
+        Integer sampleSize = minimumSampleSize(metrics);
+        boolean hasMetrics = candidateMae != null;
+        boolean sampleTooSmall = sampleSize != null && sampleSize < MIN_VALIDATION_SAMPLE_SIZE;
+        boolean promoted = hasMetrics && !sampleTooSmall && (previousMae == null || candidateMae < previousMae);
+        String reason = promotionReason(promoted, hasMetrics, sampleTooSmall);
         if (promoted) {
             activateModel(modelVersionId, mlModelType, artifactPath, reason, previousActiveId, previousMae, candidateMae);
         } else {
+            jdbcTemplate.update("update model_versions set status = 'rejected', is_active = false where id = ?", modelVersionId);
+            upsertRegistry(modelVersionId, "rejected");
             insertPromotionHistory(previousActiveId, modelVersionId, false, reason, previousMae, candidateMae);
         }
 
@@ -205,6 +211,7 @@ public class ModelMetadataService {
         candidate.put("artifactPath", artifactPath);
         candidate.put("trainedRows", intValue(training, "trained_rows", "trainedRows"));
         candidate.put("averageMae", candidateMae);
+        candidate.put("validationSampleSize", sampleSize);
         candidate.put("promoted", promoted);
         candidate.put("reason", reason);
         return candidate;
@@ -217,6 +224,13 @@ public class ModelMetadataService {
         Long previousActiveId = activeModelVersionId((String) model.get("targetVariable"));
         Double previousMae = previousActiveId == null ? null : averageStoredMae(previousActiveId);
         Double candidateMae = averageStoredMae(modelVersionId);
+        Integer sampleSize = minimumStoredSampleSize(modelVersionId);
+        if (candidateMae == null) {
+            throw new IllegalArgumentException("Candidate evaluation metrics are required before promotion");
+        }
+        if (sampleSize != null && sampleSize < MIN_VALIDATION_SAMPLE_SIZE) {
+            throw new IllegalArgumentException("Candidate validation sample size is too small for promotion");
+        }
         activateModel(modelVersionId, mlModelType, artifactPath, reason, previousActiveId, previousMae, candidateMae);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("promoted", true);
@@ -244,6 +258,7 @@ public class ModelMetadataService {
                 "update model_versions set is_active = false, status = 'archived' where target_variable = ? and id <> ?",
                 targetVariable,
                 modelVersionId);
+        archiveRegistryRows(targetVariable, modelVersionId);
         jdbcTemplate.update(
                 "update model_versions set is_active = true, status = 'active' where id = ?",
                 modelVersionId);
@@ -379,22 +394,45 @@ public class ModelMetadataService {
                 """, Double.class, modelVersionId);
     }
 
+    private Integer minimumStoredSampleSize(Long modelVersionId) {
+        return jdbcTemplate.queryForObject("""
+                select min(validation_sample_size)
+                from model_metrics
+                where model_version_id = ? and validation_sample_size is not null
+                """, Integer.class, modelVersionId);
+    }
+
     private void upsertRegistry(Long modelVersionId, String status) {
         List<Long> existing = jdbcTemplate.queryForList(
                 "select id from model_registry where model_version_id = ?",
                 Long.class,
                 modelVersionId);
+        Timestamp archivedAt = "archived".equals(status) ? Timestamp.from(Instant.now()) : null;
         if (existing.isEmpty()) {
             jdbcTemplate.update(
-                    "insert into model_registry (model_version_id, registry_status) values (?, ?)",
+                    "insert into model_registry (model_version_id, registry_status, archived_at) values (?, ?, ?)",
                     modelVersionId,
-                    status);
+                    status,
+                    archivedAt);
         } else {
             jdbcTemplate.update(
-                    "update model_registry set registry_status = ?, archived_at = null where model_version_id = ?",
+                    "update model_registry set registry_status = ?, archived_at = ? where model_version_id = ?",
                     status,
+                    archivedAt,
                     modelVersionId);
         }
+    }
+
+    private void archiveRegistryRows(String targetVariable, Long activeModelVersionId) {
+        jdbcTemplate.update("""
+                update model_registry
+                set registry_status = 'archived', archived_at = ?
+                where model_version_id in (
+                    select id
+                    from model_versions
+                    where target_variable = ? and id <> ?
+                )
+                """, Timestamp.from(Instant.now()), targetVariable, activeModelVersionId);
     }
 
     private void insertPromotionHistory(
@@ -425,7 +463,22 @@ public class ModelMetadataService {
         }
         Map<String, Object> normalized = normalizeMap(rawSection);
         Object metrics = normalized.get("metrics");
-        return metrics instanceof Map<?, ?> rawMetrics ? normalizeMap(rawMetrics) : Map.of();
+        if (!(metrics instanceof Map<?, ?> rawMetrics)) {
+            return Map.of();
+        }
+        Map<String, Object> metricRows = normalizeMap(rawMetrics);
+        Integer sectionSampleSize = intValue(normalized, "test_rows", "testRows", "validation_sample_size", "validationSampleSize");
+        if (sectionSampleSize != null) {
+            metricRows.replaceAll((target, value) -> {
+                if (!(value instanceof Map<?, ?> metric)) {
+                    return value;
+                }
+                Map<String, Object> targetMetric = normalizeMap(metric);
+                targetMetric.putIfAbsent("sample_size", sectionSampleSize);
+                return targetMetric;
+            });
+        }
+        return metricRows;
     }
 
     private static Map<String, Object> modelVersionRow(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -489,6 +542,47 @@ public class ModelMetadataService {
             return null;
         }
         return maes.stream().mapToDouble(Double::doubleValue).average().orElseThrow();
+    }
+
+    private static Integer minimumSampleSize(Map<String, Object> metrics) {
+        List<Integer> sampleSizes = metrics.values().stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .map(metric -> intValue(normalizeMap(metric), "sample_size", "sampleSize", "validation_sample_size", "validationSampleSize"))
+                .filter(value -> value != null)
+                .toList();
+        return sampleSizes.isEmpty() ? null : sampleSizes.stream().mapToInt(Integer::intValue).min().orElseThrow();
+    }
+
+    private static String promotionReason(boolean promoted, boolean hasMetrics, boolean sampleTooSmall) {
+        if (!hasMetrics) {
+            return "Candidate evaluation metrics were missing";
+        }
+        if (sampleTooSmall) {
+            return "Candidate validation sample size was too small";
+        }
+        return promoted
+                ? "Candidate improved average MAE"
+                : "Candidate did not improve average MAE";
+    }
+
+    private static RuntimeException retrainException(RuntimeException ex) {
+        if (ex instanceof MlServiceException && hasNotEnoughTrainingDataMessage(ex.getMessage())) {
+            return new IllegalArgumentException(
+                    "Retraining cannot run because there is not enough training data for the selected range",
+                    ex);
+        }
+        return ex;
+    }
+
+    private static boolean hasNotEnoughTrainingDataMessage(String message) {
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("no complete")
+                || lower.contains("at least two")
+                || lower.contains("not enough training data");
     }
 
     private static String versionFrom(
