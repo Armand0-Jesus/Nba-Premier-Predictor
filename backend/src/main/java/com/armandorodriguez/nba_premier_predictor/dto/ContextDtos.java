@@ -21,6 +21,24 @@ public final class ContextDtos {
     public record ContextIngestionResponse(int recordsAccepted) {
     }
 
+    public record ContextRefreshResponse(
+            int sourcesChecked,
+            int sourcesSucceeded,
+            int sourcesFailed,
+            int recordsAccepted,
+            int transactionsAccepted,
+            int rosterSnapshotsAccepted,
+            int draftPicksAccepted,
+            int injuryReportsAccepted,
+            boolean projectionsRefreshed,
+            boolean retrainingTriggered,
+            String message) {
+
+        public static ContextRefreshResponse empty(String message) {
+            return new ContextRefreshResponse(0, 0, 0, 0, 0, 0, 0, 0, false, false, message);
+        }
+    }
+
     public record RosterSnapshotRequest(
             @NotNull LocalDate snapshotDate,
             @NotNull @Positive Long teamId,

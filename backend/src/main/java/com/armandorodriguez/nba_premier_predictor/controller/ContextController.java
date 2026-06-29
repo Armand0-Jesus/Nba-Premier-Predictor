@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.ContextIngestionResponse;
+import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.ContextRefreshResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.DraftPickRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.DraftPickResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.InjuryReportRequest;
@@ -26,6 +27,7 @@ import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.RosterSnapshot
 import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.TransactionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.TransactionResponse;
 import com.armandorodriguez.nba_premier_predictor.service.ContextDataService;
+import com.armandorodriguez.nba_premier_predictor.service.ContextRefreshService;
 
 @Validated
 @RestController
@@ -33,9 +35,16 @@ import com.armandorodriguez.nba_premier_predictor.service.ContextDataService;
 public class ContextController {
 
     private final ContextDataService contextDataService;
+    private final ContextRefreshService contextRefreshService;
 
-    public ContextController(ContextDataService contextDataService) {
+    public ContextController(ContextDataService contextDataService, ContextRefreshService contextRefreshService) {
         this.contextDataService = contextDataService;
+        this.contextRefreshService = contextRefreshService;
+    }
+
+    @PostMapping("/refresh")
+    ContextRefreshResponse refreshContext() {
+        return contextRefreshService.refresh("manual_context_refresh");
     }
 
     @PostMapping("/rosters")

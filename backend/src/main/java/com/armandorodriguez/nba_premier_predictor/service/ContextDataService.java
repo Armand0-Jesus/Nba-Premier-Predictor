@@ -60,6 +60,21 @@ public class ContextDataService {
     public ContextIngestionResponse ingestTransactions(List<TransactionRequest> records) {
         for (TransactionRequest record : records) {
             jdbcTemplate.update("""
+                    delete from transactions
+                    where ((? is null and player_id is null) or player_id = ?)
+                      and ((? is null and from_team_id is null) or from_team_id = ?)
+                      and ((? is null and to_team_id is null) or to_team_id = ?)
+                      and transaction_type = ?
+                      and ((? is null and transaction_date is null) or transaction_date = ?)
+                      and coalesce(source_url, '') = coalesce(?, '')
+                    """,
+                    record.playerId(), record.playerId(),
+                    record.fromTeamId(), record.fromTeamId(),
+                    record.toTeamId(), record.toTeamId(),
+                    record.transactionType(),
+                    record.transactionDate(), record.transactionDate(),
+                    record.sourceUrl());
+            jdbcTemplate.update("""
                     insert into transactions (
                         player_id, from_team_id, to_team_id, transaction_type,
                         transaction_date, source, source_url, source_status,
@@ -115,6 +130,21 @@ public class ContextDataService {
     @Transactional
     public ContextIngestionResponse ingestInjuries(List<InjuryReportRequest> records) {
         for (InjuryReportRequest record : records) {
+            jdbcTemplate.update("""
+                    delete from injury_reports
+                    where report_date = ?
+                      and ((? is null and game_date is null) or game_date = ?)
+                      and ((? is null and team_id is null) or team_id = ?)
+                      and ((? is null and player_id is null) or player_id = ?)
+                      and injury_status = ?
+                      and coalesce(source, '') = coalesce(?, '')
+                    """,
+                    record.reportDate(),
+                    record.gameDate(), record.gameDate(),
+                    record.teamId(), record.teamId(),
+                    record.playerId(), record.playerId(),
+                    record.injuryStatus(),
+                    record.source());
             jdbcTemplate.update("""
                     insert into injury_reports (
                         report_date, game_date, team_id, player_id, injury_status,
