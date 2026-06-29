@@ -36,12 +36,14 @@ public class TeamService {
     private final TeamRepository teamRepository;
     private final TeamGameStatsRepository statsRepository;
     private final GameRepository gameRepository;
+    private final GameLogRecordService gameLogRecordService;
     private final SeasonService seasonService;
 
-    public TeamService(TeamRepository teamRepository, TeamGameStatsRepository statsRepository, GameRepository gameRepository, SeasonService seasonService) {
+    public TeamService(TeamRepository teamRepository, TeamGameStatsRepository statsRepository, GameRepository gameRepository, GameLogRecordService gameLogRecordService, SeasonService seasonService) {
         this.teamRepository = teamRepository;
         this.statsRepository = statsRepository;
         this.gameRepository = gameRepository;
+        this.gameLogRecordService = gameLogRecordService;
         this.seasonService = seasonService;
     }
 
@@ -88,17 +90,12 @@ public class TeamService {
                 team,
                 FranchiseMetadata.foundedYear(team),
                 FranchiseMetadata.conference(team.getId()),
-                gameRepository.championshipYears(team.getId()));
+                List.of());
     }
 
     private TeamGameLogResponse withRecordAfterGame(TeamGameLogResponse row, Integer requestedSeason) {
-        if (row.gameDateTimeEst() == null || row.teamId() == null) {
-            return row;
-        }
         Integer season = requestedSeason == null ? row.seasonStartYear() : requestedSeason;
-        long wins = gameRepository.countRegularSeasonResultsThrough(row.teamId(), season, true, row.gameDateTimeEst());
-        long losses = gameRepository.countRegularSeasonResultsThrough(row.teamId(), season, false, row.gameDateTimeEst());
-        return row.withRecordAfterGame("%d-%d".formatted(wins, losses));
+        return row.withRecordAfterGame(gameLogRecordService.recordAfterGame(row.teamId(), season, row.gameType(), row.gameDateTimeEst()));
     }
 
     private static String clean(String query) {

@@ -42,6 +42,7 @@ public class PlayerService {
 
     private final PlayerRepository playerRepository;
     private final PlayerGameStatsRepository statsRepository;
+    private final GameLogRecordService gameLogRecordService;
     private final SeasonService seasonService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -51,6 +52,7 @@ public class PlayerService {
     public PlayerService(
             PlayerRepository playerRepository,
             PlayerGameStatsRepository statsRepository,
+            GameLogRecordService gameLogRecordService,
             SeasonService seasonService,
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
@@ -58,6 +60,7 @@ public class PlayerService {
             @Value("${app.search-cache.ttl:5m}") java.time.Duration searchCacheTtl) {
         this.playerRepository = playerRepository;
         this.statsRepository = statsRepository;
+        this.gameLogRecordService = gameLogRecordService;
         this.seasonService = seasonService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
@@ -90,7 +93,8 @@ public class PlayerService {
 
     public Page<PlayerGameLogResponse> gameLogs(Long playerId, Integer season, String query, Pageable pageable) {
         findPlayer(playerId);
-        return statsRepository.findGameLogs(playerId, season, searchPattern(query), pageable).map(PlayerGameLogResponse::from);
+        return statsRepository.findGameLogs(playerId, season, searchPattern(query), pageable)
+                .map(row -> withRecordAfterGame(PlayerGameLogResponse.from(row), season));
     }
 
     public List<SeasonResponse> seasons(Long playerId) {
@@ -104,16 +108,21 @@ public class PlayerService {
         return PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));
     }
 
-    @Cacheable(cacheNames = "playerDashboards", key = "'v4:' + #playerId + ':' + (#season == null ? 'all' : #season)")
+    @Cacheable(cacheNames = "playerDashboards", key = "'v5:' + #playerId + ':' + (#season == null ? 'all' : #season)")
     public PlayerDashboardResponse dashboard(Long playerId, Integer season) {
         Player player = findPlayer(playerId);
         PlayerAveragesResponse averages = PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));
         List<PlayerGameLogResponse> recentGames = statsRepository
                 .findGameLogs(playerId, season, null, PageRequest.of(0, 10))
-                .map(PlayerGameLogResponse::from)
+                .map(row -> withRecordAfterGame(PlayerGameLogResponse.from(row), season))
                 .toList();
         List<PlayerSeasonTeamResponse> seasonTeams = statsRepository.findSeasonTeams(playerId, season);
         return new PlayerDashboardResponse(PlayerDetailResponse.from(player), averages, seasonTeams, recentGames);
+    }
+
+    private PlayerGameLogResponse withRecordAfterGame(PlayerGameLogResponse row, Integer requestedSeason) {
+        Integer season = requestedSeason == null ? row.seasonStartYear() : requestedSeason;
+        return row.withRecordAfterGame(gameLogRecordService.recordAfterGame(row.teamId(), season, row.gameType(), row.gameDateTimeEst()));
     }
 
     private Player findPlayer(Long playerId) {

@@ -89,6 +89,7 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.content[0].gameId").value(12300001))
                 .andExpect(jsonPath("$.content[0].seasonLabel").value("2023-2024"))
                 .andExpect(jsonPath("$.content[0].opponentTeamName").value("Los Angeles Lakers"))
+                .andExpect(jsonPath("$.content[0].recordAfterGame").value("2-0"))
                 .andExpect(jsonPath("$.content[0].teamScore").value(120))
                 .andExpect(jsonPath("$.content[0].opponentScore").value(115))
                 .andExpect(jsonPath("$.content[0].points").value(32))
@@ -133,6 +134,7 @@ class CoreApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
                 .andExpect(jsonPath("$.content[0].fullName").value("Los Angeles Lakers"))
+                .andExpect(jsonPath("$.content[0].championshipYears", hasSize(0)))
                 .andExpect(jsonPath("$.content[1].fullName").value("Golden State Warriors"));
     }
 
@@ -178,8 +180,34 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.content[0].gameId").value(12300001))
                 .andExpect(jsonPath("$.content[0].seasonLabel").value("2023-2024"))
                 .andExpect(jsonPath("$.content[0].opponentTeamName").value("Los Angeles Lakers"))
+                .andExpect(jsonPath("$.content[0].recordAfterGame").value("2-0"))
                 .andExpect(jsonPath("$.content[0].teamScore").value(120))
                 .andExpect(jsonPath("$.content[0].opponentScore").value(115));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, arena_name, arena_city, arena_state) values (12300003, 2023, '2024-04-20 22:00:00', '2024-04-20', 1610612744, 1610612747, 'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 105, 100, 1610612744, 'Playoffs', 'Playoffs', 'Chase Center', 'San Francisco', 'CA')",
+                    "insert into player_game_stats (game_id, player_id, team_id, opponent_team_id, win, home, num_minutes, points, assists, blocks, steals, field_goals_attempted, field_goals_made, field_goals_percentage, rebounds_total, turnovers, plus_minus_points, starting_position) values (12300003, 201939, 1610612744, 1610612747, true, true, 38.00, 35, 8, 1, 2, 24, 12, 0.500, 6, 3, 9, 'G')",
+                    "insert into team_game_stats (game_id, team_id, opponent_team_id, home, win, team_score, opponent_score, assists, blocks, steals, field_goals_made, field_goals_attempted, field_goals_percentage, rebounds_total, turnovers, num_minutes) values (12300003, 1610612744, 1610612747, true, true, 105, 100, 25, 5, 8, 39, 86, 0.453, 42, 13, 240.00)"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void playoffGameLogsUsePlayoffRecord() throws Exception {
+        mockMvc.perform(get("/api/players/201939/games")
+                        .param("season", "2023")
+                        .param("query", "Playoffs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].recordAfterGame").value("1-0"));
+
+        mockMvc.perform(get("/api/teams/1610612744/games")
+                        .param("season", "2023")
+                        .param("query", "Playoffs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].recordAfterGame").value("1-0"));
     }
 
     @Test

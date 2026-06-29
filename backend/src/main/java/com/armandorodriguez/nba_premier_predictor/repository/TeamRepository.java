@@ -22,6 +22,7 @@ public interface TeamRepository extends JpaRepository<Team, Long> {
                         like lower(concat('%', :query, '%'))
                    or lower(coalesce(t.abbreviation, '')) = lower(:query)
                    or cast(t.id as string) = :query)
+            order by lower(t.name), lower(t.city), t.id
             """)
     Page<Team> search(
             @Param("query") String query,

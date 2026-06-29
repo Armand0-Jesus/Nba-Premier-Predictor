@@ -71,6 +71,23 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             @Param("through") LocalDateTime through);
 
     @Query("""
+            select count(g)
+            from Game g
+            where (:season is null or g.seasonStartYear = :season)
+              and lower(coalesce(g.gameType, '')) = 'playoffs'
+              and (g.homeTeamId = :teamId or g.awayTeamId = :teamId)
+              and g.gameDateTimeEst <= :through
+              and g.winnerTeamId is not null
+              and ((:win = true and g.winnerTeamId = :teamId)
+                or (:win = false and g.winnerTeamId <> :teamId))
+            """)
+    long countPlayoffResultsThrough(
+            @Param("teamId") Long teamId,
+            @Param("season") Integer season,
+            @Param("win") boolean win,
+            @Param("through") LocalDateTime through);
+
+    @Query("""
             select distinct g.seasonStartYear + 1
             from Game g
             where g.winnerTeamId = :teamId

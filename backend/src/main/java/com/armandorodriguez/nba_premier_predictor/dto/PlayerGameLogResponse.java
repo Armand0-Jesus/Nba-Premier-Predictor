@@ -21,6 +21,7 @@ public record PlayerGameLogResponse(
         String gameType,
         String gameLabel,
         String gameSubLabel,
+        String recordAfterGame,
         BigDecimal minutes,
         Integer points,
         Integer rebounds,
@@ -51,6 +52,7 @@ public record PlayerGameLogResponse(
                 game == null ? null : game.getGameType(),
                 game == null ? null : game.getGameLabel(),
                 game == null ? null : game.getGameSubLabel(),
+                null,
                 stats.getNumMinutes(),
                 stats.getPoints(),
                 stats.getReboundsTotal(),
@@ -62,6 +64,37 @@ public record PlayerGameLogResponse(
                 stats.getPlusMinusPoints(),
                 stats.getStartingPosition(),
                 stats.getComment());
+    }
+
+    public PlayerGameLogResponse withRecordAfterGame(String recordAfterGame) {
+        return new PlayerGameLogResponse(
+                gameId,
+                seasonStartYear,
+                seasonLabel,
+                gameDateTimeEst,
+                teamId,
+                teamName,
+                opponentTeamId,
+                opponentTeamName,
+                home,
+                win,
+                teamScore,
+                opponentScore,
+                gameType,
+                gameLabel,
+                gameSubLabel,
+                recordAfterGame,
+                minutes,
+                points,
+                rebounds,
+                assists,
+                fieldGoalPercentage,
+                steals,
+                blocks,
+                turnovers,
+                plusMinus,
+                startingPosition,
+                comment);
     }
 
     private static String opponentName(PlayerGameStats stats) {
