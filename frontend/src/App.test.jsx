@@ -188,13 +188,19 @@ describe('NBA Premier Predictor frontend', () => {
   });
 
   test('accuracy page does not expose advanced JSON details', async () => {
+    const user = userEvent.setup();
     window.history.pushState({}, '', '/model');
 
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Accuracy' })).toBeInTheDocument();
+    expect(await screen.findByText('Recent Pick Checks')).toBeInTheDocument();
+    expect(screen.getByText(/Average miss 4.2/i)).toBeInTheDocument();
+    expect(screen.getByText(/Player Stat Points missed by 4.2/i)).toBeInTheDocument();
     expect(screen.queryByText('Advanced model info')).not.toBeInTheDocument();
     expect(screen.queryByText(/player-baseline-v1/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Update completed games/i }));
+    expect(window.fetch).toHaveBeenCalledWith('/api/model/prediction-errors/refresh', expect.objectContaining({ method: 'POST' }));
   });
 
   test('renders landing route at mobile and desktop widths', () => {
@@ -591,6 +597,14 @@ function defaultFetch(path, options = {}) {
     });
   }
 
+  if (path.startsWith('/api/model/monitoring')) {
+    return jsonResponse(modelMonitoringPayload());
+  }
+
+  if (path === '/api/model/prediction-errors/refresh' && options.method === 'POST') {
+    return jsonResponse(modelMonitoringPayload());
+  }
+
   if (path === '/api/model/versions') {
     return jsonResponse({
       activeModel: { versionName: 'player-baseline-v2' },
@@ -603,6 +617,28 @@ function defaultFetch(path, options = {}) {
   }
 
   return jsonResponse({});
+}
+
+function modelMonitoringPayload() {
+  return {
+    totalErrors: 2,
+    targetSummaries: [
+      {
+        targetVariable: 'points',
+        predictionCount: 2,
+        averageMiss: 4.2,
+        rmse: 5.1,
+      },
+    ],
+    recentErrors: [
+      {
+        id: 1,
+        predictionType: 'player_stat',
+        targetVariable: 'points',
+        absoluteError: 4.2,
+      },
+    ],
+  };
 }
 
 function page(content) {

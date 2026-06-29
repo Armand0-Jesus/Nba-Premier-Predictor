@@ -7,19 +7,23 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.armandorodriguez.nba_premier_predictor.dto.ModelRetrainRequest;
 import com.armandorodriguez.nba_premier_predictor.service.ModelMetadataService;
+import com.armandorodriguez.nba_premier_predictor.service.ModelMonitoringService;
 
 @RestController
 @RequestMapping("/api/model")
 public class ModelController {
 
     private final ModelMetadataService modelMetadataService;
+    private final ModelMonitoringService modelMonitoringService;
 
-    public ModelController(ModelMetadataService modelMetadataService) {
+    public ModelController(ModelMetadataService modelMetadataService, ModelMonitoringService modelMonitoringService) {
         this.modelMetadataService = modelMetadataService;
+        this.modelMonitoringService = modelMonitoringService;
     }
 
     @GetMapping("/metrics")
@@ -47,9 +51,24 @@ public class ModelController {
         return modelMetadataService.promotionHistory();
     }
 
+    @GetMapping("/monitoring")
+    public Map<String, Object> monitoring(@RequestParam(defaultValue = "10") int limit) {
+        return modelMonitoringService.monitoring(limit);
+    }
+
+    @GetMapping("/prediction-errors")
+    public Object predictionErrors(@RequestParam(defaultValue = "25") int limit) {
+        return modelMonitoringService.predictionErrors(limit);
+    }
+
     @PostMapping("/evaluate")
     public Map<String, Object> evaluate() {
         return modelMetadataService.evaluate();
+    }
+
+    @PostMapping("/prediction-errors/refresh")
+    public Map<String, Object> refreshPredictionErrors() {
+        return modelMonitoringService.refreshPredictionErrors();
     }
 
     @PostMapping("/retrain")

@@ -197,6 +197,45 @@ class PredictionIntegrationTests {
                 .andExpect(jsonPath("$[0].status").value("completed"));
     }
 
+    @Test
+    void refreshesPredictionErrorsFromCompletedGamesWithoutDuplicates() throws Exception {
+        mockMvc.perform(post("/api/predictions/player")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(playerRequestJson()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/predictions/fantasy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(playerRequestJson()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/predictions/game-score")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(gameScoreRequestJson()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/model/prediction-errors/refresh"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.insertedErrors").value(11))
+                .andExpect(jsonPath("$.totalErrors").value(11));
+
+        assertThat(countRows("prediction_errors")).isEqualTo(11);
+
+        mockMvc.perform(post("/api/model/prediction-errors/refresh"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.insertedErrors").value(0))
+                .andExpect(jsonPath("$.totalErrors").value(11));
+
+        mockMvc.perform(get("/api/model/monitoring").param("limit", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalErrors").value(11))
+                .andExpect(jsonPath("$.targetSummaries[0].targetVariable").isString())
+                .andExpect(jsonPath("$.recentErrors[0].absoluteError").isNumber());
+
+        mockMvc.perform(get("/api/model/prediction-errors").param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].predictionId").isNumber())
+                .andExpect(jsonPath("$[0].targetVariable").isString());
+    }
+
     private Integer countRows(String tableName) {
         return jdbcTemplate.queryForObject("select count(*) from " + tableName, Integer.class);
     }

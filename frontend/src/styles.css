@@ -460,6 +460,14 @@ button:disabled {
   width: 100%;
 }
 
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
 .panel-error {
   border-color: rgba(214, 40, 40, 0.72);
 }
@@ -748,6 +756,16 @@ tr:last-child td {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+
+.recent-checks {
+  margin-top: 16px;
+}
+
+.recent-checks > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
 }
 
 .baseline-strip span,

@@ -776,10 +776,15 @@ function GameScorePredictionPage() {
 
 function ModelPage() {
   const metrics = useApi('/api/model/metrics');
+  const monitoring = useApi('/api/model/monitoring?limit=6');
   const [evaluatedMetrics, setEvaluatedMetrics] = useState(null);
   const [evaluationStarted, setEvaluationStarted] = useState(false);
   const [evaluationError, setEvaluationError] = useState('');
+  const [monitoringData, setMonitoringData] = useState(null);
+  const [monitoringRefreshError, setMonitoringRefreshError] = useState('');
+  const [monitoringRefreshing, setMonitoringRefreshing] = useState(false);
   const displayMetrics = evaluatedMetrics || metrics.data;
+  const displayMonitoring = monitoringData || monitoring.data;
 
   useEffect(() => {
     if (!metrics.data || evaluationStarted || hasAccuracyMetrics(metrics.data)) return;
@@ -790,9 +795,21 @@ function ModelPage() {
       .catch((err) => setEvaluationError(friendlyError(err) || 'Accuracy could not be calculated right now'));
   }, [metrics.data, evaluationStarted]);
 
+  async function refreshMonitoring() {
+    setMonitoringRefreshing(true);
+    setMonitoringRefreshError('');
+    try {
+      setMonitoringData(await apiPost('/api/model/prediction-errors/refresh'));
+    } catch (err) {
+      setMonitoringRefreshError(friendlyError(err) || 'Completed games could not be checked right now');
+    } finally {
+      setMonitoringRefreshing(false);
+    }
+  }
+
   return (
     <Page title="Accuracy" eyebrow="for those who like numbers">
-      <ErrorBanner message={metrics.error || evaluationError} />
+      <ErrorBanner message={metrics.error || evaluationError || monitoring.error || monitoringRefreshError} />
       {!hasAccuracyMetrics(displayMetrics) && !evaluationError && (
         <section className="panel">
           <EmptyState label={evaluationStarted ? 'Calculating accuracy' : 'Loading accuracy'} />
@@ -816,6 +833,12 @@ function ModelPage() {
         <MetricsBlock title="Player Accuracy" evaluation={displayMetrics?.playerBaseline} />
         <MetricsBlock title="Score Accuracy" evaluation={displayMetrics?.gameScoreBaseline} />
       </section>
+      <MonitoringBlock
+        data={displayMonitoring}
+        loading={monitoring.loading}
+        refreshing={monitoringRefreshing}
+        onRefresh={refreshMonitoring}
+      />
     </Page>
   );
 }
@@ -961,6 +984,50 @@ function MetricsBlock({ title, evaluation }) {
             ))}
           </div>
         </AdvancedDetails>
+      )}
+    </section>
+  );
+}
+
+function MonitoringBlock({ data, loading, refreshing, onRefresh }) {
+  const summaries = Array.isArray(data?.targetSummaries) ? data.targetSummaries.slice(0, 6) : [];
+  const recentErrors = Array.isArray(data?.recentErrors) ? data.recentErrors.slice(0, 6) : [];
+
+  return (
+    <section className="panel panel-wide">
+      <div className="panel-heading">
+        <PanelHeader title="Recent Pick Checks" icon={ShieldCheck} />
+        <button className="icon-button" type="button" onClick={onRefresh} disabled={refreshing}>
+          {refreshing ? <Loader2 size={17} className="spin" /> : <Gauge size={17} />}
+          <span>Update completed games</span>
+        </button>
+      </div>
+      {loading && !data && <EmptyState label="Loading recent checks" />}
+      {!loading && !summaries.length && !recentErrors.length && (
+        <EmptyState label="No completed picks checked yet" />
+      )}
+      {summaries.length > 0 && (
+        <div className="metric-list">
+          {summaries.map((row) => (
+            <div className="metric-row" key={row.targetVariable}>
+              <span>{labelize(row.targetVariable)}</span>
+              <strong>Average miss {compactNumber(row.averageMiss)}</strong>
+              <em>{compactNumber(row.predictionCount, 0)} checks</em>
+            </div>
+          ))}
+        </div>
+      )}
+      {recentErrors.length > 0 && (
+        <div className="recent-checks">
+          <span>Recent misses</span>
+          <div className="baseline-strip">
+            {recentErrors.map((row) => (
+              <span key={row.id}>
+                {labelize(row.predictionType)} {labelize(row.targetVariable)} missed by {compactNumber(row.absoluteError)}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );
