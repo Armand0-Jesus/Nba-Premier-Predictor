@@ -1,6 +1,7 @@
 package com.armandorodriguez.nba_premier_predictor.controller;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -270,7 +271,7 @@ class CoreApiIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.seasonStartYear").value(2024))
                 .andExpect(jsonPath("$.scheduleAvailable").value(false))
-                .andExpect(jsonPath("$.projectionMethod").value("Schedule-free team strength projection"))
+                .andExpect(jsonPath("$.projectionMethod").value("Roster-aware projection before schedule release"))
                 .andExpect(jsonPath("$.easternConference", hasSize(0)))
                 .andExpect(jsonPath("$.westernConference", hasSize(2)))
                 .andExpect(jsonPath("$.westernConference[0].teamId").value(1610612744))
@@ -292,7 +293,7 @@ class CoreApiIntegrationTests {
         mockMvc.perform(get("/api/standings/projections/2024"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.scheduleAvailable").value(true))
-                .andExpect(jsonPath("$.projectionMethod").value("Schedule-aware team strength projection"))
+                .andExpect(jsonPath("$.projectionMethod").value("Roster-aware projection with schedule context"))
                 .andExpect(jsonPath("$.westernConference", hasSize(2)))
                 .andExpect(jsonPath("$.westernConference[0].topReasons[0]").value("Schedule context included for 1 listed game"));
     }
@@ -318,7 +319,57 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.playersAdded").value(1))
                 .andExpect(jsonPath("$.playersLost").value(0))
                 .andExpect(jsonPath("$.injuryFlagCount").value(1))
-                .andExpect(jsonPath("$.explanations[0]").value("1 confirmed roster addition"));
+                .andExpect(jsonPath("$.explanations[0]").value("Added LeBron James"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into transactions (player_id, from_team_id, to_team_id, transaction_type, transaction_date, source, source_status, confidence, affects_projection, notes) values (201939, 1610612744, 1610612747, 'trade', '2024-07-01', 'ESPN', 'trusted_report', 0.9000, true, 'trusted report should affect projection')"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void trustedReportedStarMoveRaisesRosterImpact() throws Exception {
+        mockMvc.perform(get("/api/teams/1610612747/roster-impact").param("season", "2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.playersAdded").value(1))
+                .andExpect(jsonPath("$.rosterImpactScore").value(greaterThan(5.0)))
+                .andExpect(jsonPath("$.explanations[0]").value("Added Stephen Curry"));
+
+        mockMvc.perform(get("/api/teams/1610612747/projection").param("season", "2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rosterImpactScore").value(greaterThan(5.0)))
+                .andExpect(jsonPath("$.topReasons[3]").value("Added Stephen Curry"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into transactions (player_id, from_team_id, to_team_id, transaction_type, transaction_date, source, source_status, confidence, affects_projection, notes) values (201939, 1610612744, 1610612747, 'trade', '2024-07-01', 'rumor-feed', 'rumor', 0.2500, false, 'rumor should not affect projection')"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void rumorTransactionDoesNotAffectProjection() throws Exception {
+        mockMvc.perform(get("/api/teams/1610612747/roster-impact").param("season", "2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.playersAdded").value(0))
+                .andExpect(jsonPath("$.rosterImpactScore").value(0.0))
+                .andExpect(jsonPath("$.explanations[0]").value("No major confirmed roster movement found for this projection window"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into draft_picks (player_id, team_id, draft_year, draft_round, draft_number, rookie_season_start_year) values (null, 1610612747, 2024, 1, 1, 2024)"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void topDraftPickAddsRosterImpactBeforePlayerIsKnown() throws Exception {
+        mockMvc.perform(get("/api/teams/1610612747/roster-impact").param("season", "2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rookieCount").value(1))
+                .andExpect(jsonPath("$.rosterImpactScore").value(2.8))
+                .andExpect(jsonPath("$.explanations[0]").value("Added No. 1 pick"));
     }
 
     @Test

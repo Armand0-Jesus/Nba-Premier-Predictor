@@ -1,5 +1,6 @@
 package com.armandorodriguez.nba_premier_predictor.service;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -61,8 +62,9 @@ public class ContextDataService {
             jdbcTemplate.update("""
                     insert into transactions (
                         player_id, from_team_id, to_team_id, transaction_type,
-                        transaction_date, source, notes
-                    ) values (?, ?, ?, ?, ?, ?, ?)
+                        transaction_date, source, source_url, source_status,
+                        confidence, affects_projection, reported_at, notes
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     record.playerId(),
                     record.fromTeamId(),
@@ -70,6 +72,11 @@ public class ContextDataService {
                     record.transactionType(),
                     record.transactionDate(),
                     record.source(),
+                    record.sourceUrl(),
+                    sourceStatus(record.sourceStatus()),
+                    confidence(record.confidence(), record.sourceStatus()),
+                    affectsProjection(record.affectsProjection(), record.sourceStatus()),
+                    timestamp(record.reportedAt()),
                     record.notes());
         }
         return new ContextIngestionResponse(records.size());
@@ -78,10 +85,17 @@ public class ContextDataService {
     @Transactional
     public ContextIngestionResponse ingestDraftPicks(List<DraftPickRequest> records) {
         for (DraftPickRequest record : records) {
-            jdbcTemplate.update("""
-                    delete from draft_picks
-                    where player_id = ? and draft_year = ?
-                    """, record.playerId(), record.draftYear());
+            if (record.playerId() == null) {
+                jdbcTemplate.update("""
+                        delete from draft_picks
+                        where team_id = ? and draft_year = ? and draft_number = ?
+                        """, record.teamId(), record.draftYear(), record.draftNumber());
+            } else {
+                jdbcTemplate.update("""
+                        delete from draft_picks
+                        where player_id = ? and draft_year = ?
+                        """, record.playerId(), record.draftYear());
+            }
             jdbcTemplate.update("""
                     insert into draft_picks (
                         player_id, team_id, draft_year, draft_round, draft_number,
@@ -149,7 +163,8 @@ public class ContextDataService {
             int limit) {
         StringBuilder sql = new StringBuilder("""
                 select id, player_id, from_team_id, to_team_id, transaction_type,
-                       transaction_date, source, notes, ingested_at
+                       transaction_date, source, source_url, source_status, confidence,
+                       affects_projection, reported_at, notes, ingested_at
                 from transactions
                 where 1 = 1
                 """);
@@ -248,6 +263,11 @@ public class ContextDataService {
                 rs.getString("transaction_type"),
                 nullableDate(rs, "transaction_date"),
                 rs.getString("source"),
+                rs.getString("source_url"),
+                rs.getString("source_status"),
+                rs.getBigDecimal("confidence"),
+                rs.getBoolean("affects_projection"),
+                instant(rs, "reported_at"),
                 rs.getString("notes"),
                 instant(rs, "ingested_at"));
     }
@@ -279,8 +299,41 @@ public class ContextDataService {
                 instant(rs, "ingested_at"));
     }
 
+    private static String sourceStatus(String value) {
+        if (value == null || value.isBlank()) {
+            return "official";
+        }
+        return value.trim().toLowerCase();
+    }
+
+    private static BigDecimal confidence(BigDecimal value, String sourceStatus) {
+        if (value != null) {
+            return value;
+        }
+        return switch (sourceStatus(sourceStatus)) {
+            case "rumor" -> new BigDecimal("0.2500");
+            case "unconfirmed" -> new BigDecimal("0.5000");
+            case "trusted_report" -> new BigDecimal("0.8500");
+            default -> BigDecimal.ONE;
+        };
+    }
+
+    private static boolean affectsProjection(Boolean value, String sourceStatus) {
+        if (value != null) {
+            return value;
+        }
+        return switch (sourceStatus(sourceStatus)) {
+            case "rumor", "unconfirmed" -> false;
+            default -> true;
+        };
+    }
+
     private static Timestamp timestamp(LocalDateTime value) {
         return value == null ? null : Timestamp.valueOf(value);
+    }
+
+    private static Timestamp timestamp(Instant value) {
+        return value == null ? null : Timestamp.from(value);
     }
 
     private static Instant instant(ResultSet rs, String column) throws java.sql.SQLException {

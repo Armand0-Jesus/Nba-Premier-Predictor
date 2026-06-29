@@ -64,6 +64,11 @@ class ContextIngestionIntegrationTests {
                                     "transactionType": "trade",
                                     "transactionDate": "2024-01-10",
                                     "source": "test-seed",
+                                    "sourceUrl": "https://example.test/transaction",
+                                    "sourceStatus": "trusted_report",
+                                    "confidence": 0.90,
+                                    "affectsProjection": true,
+                                    "reportedAt": "2024-01-10T15:00:00Z",
                                     "notes": "Context ingestion test move"
                                   }
                                 ]
@@ -77,19 +82,21 @@ class ContextIngestionIntegrationTests {
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].playerId").value(2544))
                 .andExpect(jsonPath("$[0].toTeamId").value(1610612744))
-                .andExpect(jsonPath("$[0].transactionType").value("trade"));
+                .andExpect(jsonPath("$[0].transactionType").value("trade"))
+                .andExpect(jsonPath("$[0].sourceStatus").value("trusted_report"))
+                .andExpect(jsonPath("$[0].affectsProjection").value(true))
+                .andExpect(jsonPath("$[0].confidence").value(0.90));
 
         mockMvc.perform(post("/api/context/draft-picks")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 [
                                   {
-                                    "playerId": 201939,
                                     "teamId": 1610612744,
-                                    "draftYear": 2009,
+                                    "draftYear": 2024,
                                     "draftRound": 1,
-                                    "draftNumber": 7,
-                                    "rookieSeasonStartYear": 2009
+                                    "draftNumber": 1,
+                                    "rookieSeasonStartYear": 2024
                                   }
                                 ]
                                 """))
@@ -97,11 +104,11 @@ class ContextIngestionIntegrationTests {
                 .andExpect(jsonPath("$.recordsAccepted").value(1));
 
         mockMvc.perform(get("/api/context/draft-picks")
-                        .param("draftYear", "2009"))
+                        .param("draftYear", "2024"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].playerId").value(201939))
-                .andExpect(jsonPath("$[0].draftNumber").value(7));
+                .andExpect(jsonPath("$[0].teamId").value(1610612744))
+                .andExpect(jsonPath("$[0].draftNumber").value(1));
 
         mockMvc.perform(post("/api/context/injuries")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -257,6 +257,11 @@ create table if not exists transactions (
     transaction_type varchar(255) not null,
     transaction_date date,
     source varchar(255),
+    source_url varchar(1000),
+    source_status varchar(255) not null default 'official',
+    confidence numeric(5,4) not null default 1.0000,
+    affects_projection boolean not null default true,
+    reported_at timestamp,
     notes varchar(4000),
     ingested_at timestamp not null default current_timestamp
 );

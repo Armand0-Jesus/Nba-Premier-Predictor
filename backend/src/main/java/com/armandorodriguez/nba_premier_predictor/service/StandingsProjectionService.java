@@ -86,8 +86,8 @@ public class StandingsProjectionService {
                 build.scheduleAvailable(),
                 build.generatedAt(),
                 build.scheduleAvailable()
-                        ? "Schedule-aware Monte Carlo projection using current team strength"
-                        : "Schedule-free Monte Carlo projection using team strength and roster context",
+                        ? "Roster-aware season range using schedule context"
+                        : "Roster-aware season range using team strength",
                 allRows);
     }
 
@@ -379,54 +379,68 @@ public class StandingsProjectionService {
         LocalDate fromDate = LocalDate.of(season, 6, 1);
         LocalDate throughDate = LocalDate.of(season + 1, 6, 30);
         List<TransactionRow> transactions = jdbcTemplate.query("""
-                select player_id, from_team_id, to_team_id, transaction_type, transaction_date
-                from transactions
-                where transaction_date >= ?
-                  and transaction_date <= ?
-                  and (from_team_id = ? or to_team_id = ?)
-                order by transaction_date, id
+                select t.player_id, t.from_team_id, t.to_team_id,
+                       coalesce(nullif(trim(concat(coalesce(p.first_name, ''), ' ', coalesce(p.last_name, ''))), ''), cast(t.player_id as varchar)) as player_name
+                from transactions t
+                left join players p on p.player_id = t.player_id
+                where t.transaction_date >= ?
+                  and t.transaction_date <= ?
+                  and (t.from_team_id = ? or t.to_team_id = ?)
+                  and coalesce(t.affects_projection, true) = true
+                  and lower(coalesce(t.source_status, 'official')) in ('official', 'trusted_report')
+                  and coalesce(t.confidence, 1.0000) >= 0.7000
+                order by t.transaction_date, t.id
                 """, (rs, rowNum) -> new TransactionRow(
                 nullableLong(rs, "player_id"),
                 nullableLong(rs, "from_team_id"),
                 nullableLong(rs, "to_team_id"),
-                rs.getString("transaction_type"),
-                rs.getDate("transaction_date") == null ? null : rs.getDate("transaction_date").toLocalDate()),
+                rs.getString("player_name")),
                 fromDate, throughDate, teamId, teamId);
         int added = 0;
         int lost = 0;
         double incomingMinutes = 0;
         double outgoingMinutes = 0;
+        double incomingImpact = 0;
+        double outgoingImpact = 0;
+        List<String> additions = new ArrayList<>();
+        List<String> departures = new ArrayList<>();
         for (TransactionRow transaction : transactions) {
             if (transaction.playerId() == null) {
                 continue;
             }
-            double minutes = playerAverageMinutes(transaction.playerId(), sourceSeason);
+            PlayerImpact playerImpact = playerImpact(transaction.playerId(), sourceSeason);
             if (teamId.equals(transaction.toTeamId())) {
                 added++;
-                incomingMinutes += minutes;
+                incomingMinutes += playerImpact.minutes();
+                incomingImpact += playerImpact.rating();
+                additions.add(transaction.playerName());
             }
             if (teamId.equals(transaction.fromTeamId())) {
                 lost++;
-                outgoingMinutes += minutes;
+                outgoingMinutes += playerImpact.minutes();
+                outgoingImpact += playerImpact.rating();
+                departures.add(transaction.playerName());
             }
         }
         RookieImpact rookieImpact = rookieImpact(teamId, season);
         int injuryFlags = injuryFlagCount(teamId, fromDate, throughDate);
         double turnoverScore = clamp(0, 1, (added + lost + rookieImpact.count()) / 15.0);
         double injuryRisk = clamp(0, 1, injuryFlags / 5.0);
-        double impactScore = ((incomingMinutes - outgoingMinutes) / 240.0) * 8.0
+        double impactScore = (incomingImpact - outgoingImpact)
                 + rookieImpact.score()
                 - (injuryRisk * 2.0);
         List<String> explanations = new ArrayList<>();
-        if (added > 0) {
-            explanations.add(added + " confirmed roster addition" + plural(added));
+        if (!additions.isEmpty()) {
+            explanations.add(additions.size() <= 3
+                    ? "Added " + String.join(", ", additions)
+                    : added + " confirmed roster additions");
         }
-        if (lost > 0) {
-            explanations.add(lost + " confirmed departure" + plural(lost));
+        if (!departures.isEmpty()) {
+            explanations.add(departures.size() <= 3
+                    ? "Lost " + String.join(", ", departures)
+                    : lost + " confirmed departures");
         }
-        if (rookieImpact.count() > 0) {
-            explanations.add(rookieImpact.count() + " rookie addition" + plural(rookieImpact.count()));
-        }
+        explanations.addAll(rookieImpact.explanations());
         if (injuryFlags > 0) {
             explanations.add(injuryFlags + " availability flag" + plural(injuryFlags) + " in current context");
         }
@@ -447,17 +461,40 @@ public class StandingsProjectionService {
     }
 
     private RookieImpact rookieImpact(Long teamId, int season) {
-        return jdbcTemplate.queryForObject("""
-                select count(*) as rookie_count,
-                       coalesce(sum(case
-                           when draft_number between 1 and 14 then 1.2
-                           when draft_round = 1 then 0.6
-                           else 0.2
-                       end), 0) as rookie_score
-                from draft_picks
+        List<DraftPickRow> picks = jdbcTemplate.query("""
+                select d.player_id, d.draft_round, d.draft_number,
+                       coalesce(nullif(trim(concat(coalesce(p.first_name, ''), ' ', coalesce(p.last_name, ''))), ''), null) as player_name
+                from draft_picks d
+                left join players p on p.player_id = d.player_id
                 where team_id = ?
                   and rookie_season_start_year = ?
-                """, (rs, rowNum) -> new RookieImpact(rs.getInt("rookie_count"), rs.getDouble("rookie_score")), teamId, season);
+                order by draft_number nulls last, id
+                """, (rs, rowNum) -> new DraftPickRow(
+                nullableLong(rs, "player_id"),
+                nullableInt(rs, "draft_round"),
+                nullableInt(rs, "draft_number"),
+                rs.getString("player_name")), teamId, season);
+        double score = 0;
+        List<String> explanations = new ArrayList<>();
+        for (DraftPickRow pick : picks) {
+            int number = pick.draftNumber() == null ? 99 : pick.draftNumber();
+            if (number == 1) {
+                score += 2.8;
+                explanations.add("Added No. 1 pick" + named(pick.playerName()));
+            } else if (number <= 5) {
+                score += 2.0;
+                explanations.add("Added top-five pick" + named(pick.playerName()));
+            } else if (number <= 14) {
+                score += 1.2;
+                explanations.add("Added lottery pick" + named(pick.playerName()));
+            } else if (Integer.valueOf(1).equals(pick.draftRound())) {
+                score += 0.6;
+                explanations.add("Added first-round rookie" + named(pick.playerName()));
+            } else {
+                score += 0.2;
+            }
+        }
+        return new RookieImpact(picks.size(), score, explanations);
     }
 
     private int injuryFlagCount(Long teamId, LocalDate fromDate, LocalDate throughDate) {
@@ -471,17 +508,37 @@ public class StandingsProjectionService {
                 """, Integer.class, teamId, fromDate, throughDate);
     }
 
-    private double playerAverageMinutes(Long playerId, int sourceSeason) {
-        Double value = jdbcTemplate.queryForObject("""
-                select avg(p.num_minutes)
+    private PlayerImpact playerImpact(Long playerId, int sourceSeason) {
+        return jdbcTemplate.queryForObject("""
+                select count(*) as games_played,
+                       coalesce(avg(p.num_minutes), 0) as minutes,
+                       coalesce(avg(p.points), 0) as points,
+                       coalesce(avg(p.rebounds_total), 0) as rebounds,
+                       coalesce(avg(p.assists), 0) as assists,
+                       coalesce(avg(p.steals), 0) as steals,
+                       coalesce(avg(p.blocks), 0) as blocks,
+                       coalesce(avg(p.turnovers), 0) as turnovers
                 from player_game_stats p
                 join games g on g.game_id = p.game_id
                 where p.player_id = ?
                   and p.num_minutes is not null
                   and g.season_start_year = ?
                   and lower(coalesce(g.game_type, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
-                """, Double.class, playerId, sourceSeason);
-        return value == null ? 0 : value;
+                """, (rs, rowNum) -> {
+            int gamesPlayed = rs.getInt("games_played");
+            double minutes = rs.getDouble("minutes");
+            if (gamesPlayed == 0) {
+                return new PlayerImpact(0, 0);
+            }
+            double rating = (rs.getDouble("points") * 0.18)
+                    + (rs.getDouble("rebounds") * 0.10)
+                    + (rs.getDouble("assists") * 0.13)
+                    + (rs.getDouble("steals") * 0.45)
+                    + (rs.getDouble("blocks") * 0.35)
+                    - (rs.getDouble("turnovers") * 0.12)
+                    + (minutes * 0.03);
+            return new PlayerImpact(minutes, clamp(0, 8.5, rating));
+        }, playerId, sourceSeason);
     }
 
     private List<String> reasons(TeamBaseline baseline, RosterImpact impact) {
@@ -668,8 +725,8 @@ public class StandingsProjectionService {
 
     private static String projectionMethod(boolean scheduleAvailable) {
         return scheduleAvailable
-                ? "Schedule-aware team strength projection"
-                : "Schedule-free team strength projection";
+                ? "Roster-aware projection with schedule context"
+                : "Roster-aware projection before schedule release";
     }
 
     private static String seasonLabel(int season) {
@@ -678,6 +735,10 @@ public class StandingsProjectionService {
 
     private static String signed(double value) {
         return value > 0 ? "+" + value : String.valueOf(value);
+    }
+
+    private static String named(String playerName) {
+        return playerName == null || playerName.isBlank() ? "" : " " + playerName;
     }
 
     private static String plural(int value) {
@@ -708,6 +769,11 @@ public class StandingsProjectionService {
         return rs.wasNull() ? null : value;
     }
 
+    private static Integer nullableInt(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        int value = rs.getInt(column);
+        return rs.wasNull() ? null : value;
+    }
+
     private record ProjectionBuild(
             int season,
             int sourceSeason,
@@ -735,15 +801,20 @@ public class StandingsProjectionService {
             List<String> explanations) {
     }
 
-    private record RookieImpact(int count, double score) {
+    private record PlayerImpact(double minutes, double rating) {
+    }
+
+    private record RookieImpact(int count, double score, List<String> explanations) {
+    }
+
+    private record DraftPickRow(Long playerId, Integer draftRound, Integer draftNumber, String playerName) {
     }
 
     private record TransactionRow(
             Long playerId,
             Long fromTeamId,
             Long toTeamId,
-            String type,
-            LocalDate date) {
+            String playerName) {
     }
 
     private record GameScheduleRow(Long homeTeamId, Long awayTeamId, Long winnerTeamId) {

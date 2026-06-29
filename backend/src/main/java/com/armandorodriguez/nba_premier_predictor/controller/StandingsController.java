@@ -24,17 +24,17 @@ public class StandingsController {
     }
 
     @GetMapping("/projections")
-    StandingsProjectionResponse projections(@RequestParam(required = false) Integer season) {
+    public StandingsProjectionResponse projections(@RequestParam(required = false) Integer season) {
         return standingsProjectionService.projections(season);
     }
 
     @GetMapping("/projections/{season}")
-    StandingsProjectionResponse projectionsBySeason(@PathVariable Integer season) {
+    public StandingsProjectionResponse projectionsBySeason(@PathVariable Integer season) {
         return standingsProjectionService.projections(season);
     }
 
     @PostMapping("/simulate")
-    SeasonSimulationResponse simulate(
+    public SeasonSimulationResponse simulate(
             @RequestParam(required = false) Integer season,
             @RequestParam(required = false) Integer runs) {
         return standingsProjectionService.simulate(season, runs);

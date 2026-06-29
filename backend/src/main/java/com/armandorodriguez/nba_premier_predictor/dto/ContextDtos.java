@@ -10,6 +10,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 
 public final class ContextDtos {
@@ -49,6 +50,12 @@ public final class ContextDtos {
             @NotBlank String transactionType,
             LocalDate transactionDate,
             String source,
+            String sourceUrl,
+            @Pattern(regexp = "official|trusted_report|rumor|unconfirmed", flags = Pattern.Flag.CASE_INSENSITIVE)
+            String sourceStatus,
+            @DecimalMin("0.0") @DecimalMax("1.0") BigDecimal confidence,
+            Boolean affectsProjection,
+            Instant reportedAt,
             String notes) {
     }
 
@@ -60,12 +67,17 @@ public final class ContextDtos {
             String transactionType,
             LocalDate transactionDate,
             String source,
+            String sourceUrl,
+            String sourceStatus,
+            BigDecimal confidence,
+            Boolean affectsProjection,
+            Instant reportedAt,
             String notes,
             Instant ingestedAt) {
     }
 
     public record DraftPickRequest(
-            @NotNull @Positive Long playerId,
+            @Positive Long playerId,
             @NotNull @Positive Long teamId,
             @NotNull @Min(1946) Integer draftYear,
             @Positive Integer draftRound,
