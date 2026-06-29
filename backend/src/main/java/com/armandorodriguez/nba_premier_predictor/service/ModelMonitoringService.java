@@ -21,6 +21,7 @@ public class ModelMonitoringService {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("totalErrors", countErrors());
         response.put("targetSummaries", targetSummaries());
+        response.put("driftIndicators", driftIndicators());
         response.put("recentErrors", predictionErrors(limit));
         return response;
     }
@@ -173,12 +174,72 @@ public class ModelMonitoringService {
         });
     }
 
+    private List<Map<String, Object>> driftIndicators() {
+        return jdbcTemplate.query("""
+                select target_variable, count(*) as sample_size, avg(absolute_error) as average_miss
+                from (
+                    select target_variable, absolute_error
+                    from prediction_errors
+                    where absolute_error is not null
+                    order by recorded_at desc, id desc
+                    limit 100
+                ) recent
+                group by target_variable
+                order by target_variable
+                """, (rs, rowNum) -> {
+            String targetVariable = rs.getString("target_variable");
+            double averageMiss = rs.getDouble("average_miss");
+            double threshold = driftThreshold(targetVariable);
+            String status = driftStatus(averageMiss, threshold);
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("targetVariable", targetVariable);
+            row.put("sampleSize", rs.getInt("sample_size"));
+            row.put("averageMiss", averageMiss);
+            row.put("watchThreshold", threshold);
+            row.put("status", status);
+            row.put("message", driftMessage(targetVariable, status));
+            return row;
+        });
+    }
+
     private Integer countErrors() {
         return jdbcTemplate.queryForObject("select count(*) from prediction_errors", Integer.class);
     }
 
     private static int rowLimit(int limit) {
         return Math.max(1, Math.min(limit, 100));
+    }
+
+    private static double driftThreshold(String targetVariable) {
+        return switch (targetVariable) {
+            case "rebounds", "assists" -> 4.0;
+            case "steals", "blocks" -> 2.0;
+            case "turnovers" -> 2.5;
+            case "minutes" -> 8.0;
+            case "fantasy_points" -> 12.0;
+            case "home_team_score", "away_team_score" -> 15.0;
+            case "point_differential" -> 12.0;
+            default -> 8.0;
+        };
+    }
+
+    private static String driftStatus(double averageMiss, double threshold) {
+        if (averageMiss >= threshold * 1.5) {
+            return "needs_attention";
+        }
+        if (averageMiss >= threshold) {
+            return "watch";
+        }
+        return "steady";
+    }
+
+    private static String driftMessage(String targetVariable, String status) {
+        return switch (status) {
+            case "needs_attention" -> targetVariable + " misses are running high";
+            case "watch" -> targetVariable + " misses are near the watch range";
+            default -> targetVariable + " misses look steady";
+        };
     }
 
     private static Long nullableLong(java.sql.ResultSet rs, String column) throws java.sql.SQLException {

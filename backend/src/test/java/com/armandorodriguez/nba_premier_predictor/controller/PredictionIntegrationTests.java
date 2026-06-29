@@ -228,6 +228,8 @@ class PredictionIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalErrors").value(11))
                 .andExpect(jsonPath("$.targetSummaries[0].targetVariable").isString())
+                .andExpect(jsonPath("$.driftIndicators[0].status").value("needs_attention"))
+                .andExpect(jsonPath("$.driftIndicators[0].watchThreshold").isNumber())
                 .andExpect(jsonPath("$.recentErrors[0].absoluteError").isNumber());
 
         mockMvc.perform(get("/api/model/prediction-errors").param("limit", "2"))
