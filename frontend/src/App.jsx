@@ -777,6 +777,9 @@ function GameScorePredictionPage() {
 function ModelPage() {
   const metrics = useApi('/api/model/metrics');
   const monitoring = useApi('/api/model/monitoring?limit=6');
+  const activeModels = useApi('/api/model/versions/active');
+  const trainingRuns = useApi('/api/model/training-runs');
+  const promotionHistory = useApi('/api/model/promotion-history');
   const [evaluatedMetrics, setEvaluatedMetrics] = useState(null);
   const [evaluationStarted, setEvaluationStarted] = useState(false);
   const [evaluationError, setEvaluationError] = useState('');
@@ -809,7 +812,15 @@ function ModelPage() {
 
   return (
     <Page title="Accuracy" eyebrow="for those who like numbers">
-      <ErrorBanner message={metrics.error || evaluationError || monitoring.error || monitoringRefreshError} />
+      <ErrorBanner message={
+        metrics.error
+        || evaluationError
+        || monitoring.error
+        || monitoringRefreshError
+        || activeModels.error
+        || trainingRuns.error
+        || promotionHistory.error
+      } />
       {!hasAccuracyMetrics(displayMetrics) && !evaluationError && (
         <section className="panel">
           <EmptyState label={evaluationStarted ? 'Calculating accuracy' : 'Loading accuracy'} />
@@ -833,6 +844,12 @@ function ModelPage() {
         <MetricsBlock title="Player Accuracy" evaluation={displayMetrics?.playerBaseline} />
         <MetricsBlock title="Score Accuracy" evaluation={displayMetrics?.gameScoreBaseline} />
       </section>
+      <ModelUpdatesBlock
+        activeModels={activeModels.data}
+        trainingRuns={trainingRuns.data}
+        promotionHistory={promotionHistory.data}
+        loading={activeModels.loading || trainingRuns.loading || promotionHistory.loading}
+      />
       <MonitoringBlock
         data={displayMonitoring}
         loading={monitoring.loading}
@@ -989,9 +1006,86 @@ function MetricsBlock({ title, evaluation }) {
   );
 }
 
+function ModelUpdatesBlock({ activeModels, trainingRuns, promotionHistory, loading }) {
+  const activeRows = Array.isArray(activeModels) ? activeModels : [];
+  const runRows = Array.isArray(trainingRuns) ? trainingRuns.slice(0, 4) : [];
+  const decisionRows = Array.isArray(promotionHistory) ? promotionHistory.slice(0, 4) : [];
+
+  return (
+    <section className="panel panel-wide">
+      <PanelHeader title="Model Updates" icon={ShieldCheck} />
+      {loading && !activeRows.length && !runRows.length && !decisionRows.length && (
+        <EmptyState label="Loading model updates" />
+      )}
+      {!loading && !activeRows.length && !runRows.length && !decisionRows.length && (
+        <EmptyState label="No model updates yet" />
+      )}
+      {activeRows.length > 0 && (
+        <div className="metric-list model-update-section">
+          {activeRows.map((row) => (
+            <div className="metric-row" key={row.id}>
+              <span>{modelKindText(row.targetVariable)}</span>
+              <strong>In use</strong>
+              <em>Trained {formatShortDate(row.trainedAt)}</em>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="model-update-columns">
+        <div>
+          <h4>Recent Training Runs</h4>
+          {runRows.length ? (
+            <div className="metric-list">
+              {runRows.map((row) => (
+                <div className="metric-row" key={row.id}>
+                  <span>{runStatusText(row.status)}</span>
+                  <strong>{trainingRangeText(row.trainingDataRange)}</strong>
+                  <em>{formatMinuteDateTime(row.finishedAt || row.startedAt)}</em>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState label="No recent training yet" />
+          )}
+        </div>
+        <div>
+          <h4>Recent Decisions</h4>
+          {decisionRows.length ? (
+            <div className="metric-list">
+              {decisionRows.map((row) => (
+                <div className="metric-row" key={row.id}>
+                  <span>{row.promoted ? 'Updated' : 'Kept current'}</span>
+                  <strong>{maeDecisionText(row)}</strong>
+                  <em>{formatMinuteDateTime(row.promotedAt)}</em>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState label="No update decisions yet" />
+          )}
+        </div>
+      </div>
+      {activeRows.length > 0 && (
+        <AdvancedDetails title="Version names">
+          <div className="baseline-strip">
+            {activeRows.map((row) => (
+              <span key={row.id}>
+                {modelKindText(row.targetVariable)} {row.versionName || 'Version not listed'}
+              </span>
+            ))}
+          </div>
+        </AdvancedDetails>
+      )}
+    </section>
+  );
+}
+
 function MonitoringBlock({ data, loading, refreshing, onRefresh }) {
   const summaries = Array.isArray(data?.targetSummaries) ? data.targetSummaries.slice(0, 6) : [];
   const recentErrors = Array.isArray(data?.recentErrors) ? data.recentErrors.slice(0, 6) : [];
+  const warningRows = Array.isArray(data?.driftIndicators)
+    ? data.driftIndicators.filter((row) => row.status !== 'steady').slice(0, 4)
+    : [];
 
   return (
     <section className="panel panel-wide">
@@ -1006,6 +1100,22 @@ function MonitoringBlock({ data, loading, refreshing, onRefresh }) {
       {!loading && !summaries.length && !recentErrors.length && (
         <EmptyState label="No completed picks checked yet" />
       )}
+      <div className="accuracy-watchlist">
+        <span>Accuracy Watchlist</span>
+        {warningRows.length ? (
+          <div className="watchlist-grid">
+            {warningRows.map((row) => (
+              <div className={`watchlist-item watchlist-item--${row.status}`} key={row.targetVariable}>
+                <strong>{watchStatusText(row.status)}</strong>
+                <span>{labelize(row.targetVariable)} average miss {compactNumber(row.averageMiss)}</span>
+                <em>Watch range {compactNumber(row.watchThreshold)}</em>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState label="No accuracy warnings right now" />
+        )}
+      </div>
       {summaries.length > 0 && (
         <div className="metric-list">
           {summaries.map((row) => (
@@ -1471,6 +1581,44 @@ function hitRateText(row) {
     return `${percent(row.hitRate)}${threshold}`;
   }
   return `Average miss ${compactNumber(row.mae)}`;
+}
+
+function modelKindText(value) {
+  const text = String(value || '');
+  if (text.includes('game_score')) return 'Score Picks';
+  if (text.includes('player')) return 'Player Picks';
+  return 'Picks';
+}
+
+function runStatusText(value) {
+  const text = String(value || '').toLowerCase();
+  if (text === 'completed') return 'Completed';
+  if (text === 'failed') return 'Needs attention';
+  if (text === 'running') return 'Running';
+  return 'Status not listed';
+}
+
+function trainingRangeText(value) {
+  if (!value) return 'All imported seasons';
+  return String(value).replace('-', ' to ');
+}
+
+function maeDecisionText(row) {
+  if (row?.candidateMae === null || row?.candidateMae === undefined) {
+    return row?.promoted ? 'Updated' : 'No change';
+  }
+  if (row?.previousMae === null || row?.previousMae === undefined) {
+    return `Average miss ${compactNumber(row.candidateMae)}`;
+  }
+  const better = Number(row.candidateMae) < Number(row.previousMae);
+  const direction = better ? 'Improved' : 'Held';
+  return `${direction} ${compactNumber(row.previousMae)} to ${compactNumber(row.candidateMae)}`;
+}
+
+function watchStatusText(value) {
+  if (value === 'needs_attention') return 'Needs attention';
+  if (value === 'watch') return 'Watch';
+  return 'Steady';
 }
 
 function fantasySummary(prediction) {

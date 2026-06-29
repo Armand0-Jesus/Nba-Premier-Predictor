@@ -195,6 +195,15 @@ describe('NBA Premier Predictor frontend', () => {
 
     expect(await screen.findByRole('heading', { name: 'Accuracy' })).toBeInTheDocument();
     expect(await screen.findByText('Recent Pick Checks')).toBeInTheDocument();
+    expect(await screen.findByText('Model Updates')).toBeInTheDocument();
+    expect(screen.getByText('Recent Training Runs')).toBeInTheDocument();
+    expect(screen.getByText('2014 to 2025')).toBeInTheDocument();
+    expect(screen.getByText('Recent Decisions')).toBeInTheDocument();
+    expect(screen.getByText('Improved 5.2 to 4.8')).toBeInTheDocument();
+    expect(screen.queryByText(/artifacts/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Accuracy Watchlist')).toBeInTheDocument();
+    expect(screen.getByText('Needs attention')).toBeInTheDocument();
+    expect(screen.getByText(/Points average miss 9.4/i)).toBeInTheDocument();
     expect(screen.getByText(/Average miss 4.2/i)).toBeInTheDocument();
     expect(screen.getByText(/Player Stat Points missed by 4.2/i)).toBeInTheDocument();
     expect(screen.queryByText('Advanced model info')).not.toBeInTheDocument();
@@ -605,6 +614,49 @@ function defaultFetch(path, options = {}) {
     return jsonResponse(modelMonitoringPayload());
   }
 
+  if (path === '/api/model/versions/active') {
+    return jsonResponse([
+      {
+        id: 5,
+        versionName: 'player-baseline-v2-20260629120000',
+        targetVariable: 'player_stat_fantasy',
+        trainedAt: '2026-06-29T12:00:00Z',
+        active: true,
+      },
+      {
+        id: 6,
+        versionName: 'game-score-baseline-v2-20260629120000',
+        targetVariable: 'game_score',
+        trainedAt: '2026-06-29T12:00:00Z',
+        active: true,
+      },
+    ]);
+  }
+
+  if (path === '/api/model/training-runs') {
+    return jsonResponse([
+      {
+        id: 3,
+        startedAt: '2026-06-29T11:58:00Z',
+        finishedAt: '2026-06-29T12:04:00Z',
+        status: 'completed',
+        trainingDataRange: '2014-2025',
+      },
+    ]);
+  }
+
+  if (path === '/api/model/promotion-history') {
+    return jsonResponse([
+      {
+        id: 4,
+        promoted: true,
+        previousMae: 5.2,
+        candidateMae: 4.8,
+        promotedAt: '2026-06-29T12:05:00Z',
+      },
+    ]);
+  }
+
   if (path === '/api/model/versions') {
     return jsonResponse({
       activeModel: { versionName: 'player-baseline-v2' },
@@ -628,6 +680,15 @@ function modelMonitoringPayload() {
         predictionCount: 2,
         averageMiss: 4.2,
         rmse: 5.1,
+      },
+    ],
+    driftIndicators: [
+      {
+        targetVariable: 'points',
+        sampleSize: 5,
+        averageMiss: 9.4,
+        watchThreshold: 8,
+        status: 'needs_attention',
       },
     ],
     recentErrors: [

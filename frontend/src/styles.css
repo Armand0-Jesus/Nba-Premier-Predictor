@@ -762,7 +762,66 @@ tr:last-child td {
   margin-top: 16px;
 }
 
-.recent-checks > span {
+.recent-checks > span,
+.accuracy-watchlist > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+.accuracy-watchlist {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 16px;
+}
+
+.watchlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.watchlist-item {
+  display: grid;
+  gap: 6px;
+  min-height: 96px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.watchlist-item--watch {
+  border-color: rgba(255, 159, 28, 0.58);
+}
+
+.watchlist-item--needs_attention {
+  border-color: rgba(214, 40, 40, 0.66);
+}
+
+.watchlist-item strong {
+  color: var(--orange-strong);
+}
+
+.watchlist-item span,
+.watchlist-item em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.model-update-section {
+  margin-top: 14px;
+}
+
+.model-update-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.model-update-columns h4 {
+  margin: 0 0 10px;
   color: var(--muted);
   font-size: 0.82rem;
   text-transform: uppercase;
@@ -976,6 +1035,7 @@ tr:last-child td {
   .side-nav,
   .dashboard-grid,
   .split,
+  .model-update-columns,
   .result-grid,
   .scoreboard,
   .snapshot-summary,
