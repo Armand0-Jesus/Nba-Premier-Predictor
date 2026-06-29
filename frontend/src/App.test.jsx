@@ -40,6 +40,7 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.getByAltText(/Larry Bird and Magic Johnson/i)).toBeInTheDocument();
     expect(screen.getByAltText(/Kobe Bryant and Michael Jordan/i)).toBeInTheDocument();
     expect(screen.getByAltText(/LeBron James and Dwyane Wade/i)).toBeInTheDocument();
+    expect(document.querySelectorAll('.legend-card-backdrop')).toHaveLength(3);
   });
 
   test('dashboard route redirects to players without exposing implementation names', async () => {
@@ -90,6 +91,7 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.getByText('Los Angeles Lakers')).toBeInTheDocument();
     expect(screen.getByText('ATL')).toBeInTheDocument();
     expect(screen.getByText('TOR')).toBeInTheDocument();
+    expect(screen.queryByText('Championships')).not.toBeInTheDocument();
     expect(screen.queryByText('Sheboygan Red Skins')).not.toBeInTheDocument();
     expect(window.fetch.mock.calls.some(([url]) => String(url).includes('currentOnly=true'))).toBe(true);
   });
@@ -102,7 +104,18 @@ describe('NBA Premier Predictor frontend', () => {
     expect(await screen.findByRole('heading', { name: 'Golden State Warriors' })).toBeInTheDocument();
     expect(document.body).toHaveTextContent('12-5');
     expect(document.body).toHaveTextContent('71%');
+    expect(document.body).toHaveTextContent('2-0');
     expect(screen.queryByText('Through')).not.toBeInTheDocument();
+  });
+
+  test('box score does not label everyone bench when lineup data is missing', async () => {
+    window.history.pushState({}, '', '/games/12300001');
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: /Los Angeles Lakers at Golden State Warriors/i })).toBeInTheDocument();
+    expect(screen.getAllByText('Lineup not listed').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Bench')).not.toBeInTheDocument();
   });
 
   test('submits a player prediction through searchable choices', async () => {
@@ -275,6 +288,7 @@ function defaultFetch(path, options = {}) {
         opponentScore: 115,
         home: true,
         win: true,
+        recordAfterGame: '2-0',
         minutes: 35.5,
         points: 32,
         rebounds: 5,
@@ -518,7 +532,22 @@ function defaultFetch(path, options = {}) {
   }
 
   if (path.startsWith('/api/teams/1610612744/games')) {
-    return jsonResponse(page([]));
+    return jsonResponse(page([
+      {
+        gameId: 12300001,
+        gameDateTimeEst: '2024-01-15T22:00:00',
+        opponentTeamName: 'Los Angeles Lakers',
+        win: true,
+        teamScore: 120,
+        opponentScore: 115,
+        recordAfterGame: '2-0',
+        rebounds: 44,
+        assists: 29,
+        steals: 8,
+        blocks: 6,
+        turnovers: 12,
+      },
+    ]));
   }
 
   if (path === '/api/model/metrics') {

@@ -116,12 +116,15 @@ function Landing() {
 
       <section className="legend-collage" aria-label="NBA eras">
         <article className="legend-card legend-card-tall">
+          <span className="legend-card-backdrop" style={{ backgroundImage: `url(${larryMagic})` }} />
           <img src={larryMagic} alt="Larry Bird and Magic Johnson fighting for position" />
         </article>
         <article className="legend-card legend-card-wide">
+          <span className="legend-card-backdrop" style={{ backgroundImage: `url(${kobeJordan})` }} />
           <img src={kobeJordan} alt="Kobe Bryant and Michael Jordan during a game" />
         </article>
         <article className="legend-card">
+          <span className="legend-card-backdrop" style={{ backgroundImage: `url(${lebronWade})` }} />
           <img src={lebronWade} alt="LeBron James and Dwyane Wade in transition" />
         </article>
       </section>
@@ -183,7 +186,6 @@ function TeamsPage() {
         ['fullName', 'Team', (_, row) => <TeamIdentity team={row} />],
         ['abbreviation', 'Abbr'],
         ['seasonFounded', 'Founded'],
-        ['championshipYears', 'Championships', championshipText],
       ]}
       rowLink={(row) => `/teams/${row.id}`}
     />
@@ -857,6 +859,7 @@ function EntityList({
   const path = requireQuery && !hasQuery ? null : `${endpoint}?${search.toString()}`;
   const result = useApi(path);
   const rows = pageItems(result.data);
+  const emptyLabel = !path ? emptyBeforeSearch : result.loading ? `Loading ${title.toLowerCase()}` : result.error || 'No rows found';
 
   return (
     <Page title={title} eyebrow="browse">
@@ -878,7 +881,7 @@ function EntityList({
               View
             </Link>
           )}
-          empty={!path ? emptyBeforeSearch : result.error || 'No rows found'}
+          empty={emptyLabel}
         />
         {path && <Pager page={page} setPage={setPage} last={result.data?.last} />}
       </section>
@@ -1102,6 +1105,7 @@ function TeamGameLogTable({ rows }) {
         columns={[
           ['gameDateTimeEst', 'Date', formatShortDate],
           ['opponentTeamName', 'Opponent'],
+          ['recordAfterGame', 'Record', formatCell],
           ['win', 'Result', resultText],
           ['teamScore', 'Score', (_, row) => teamScoreText(row)],
           ['rebounds', 'REB', statCell],
@@ -1122,12 +1126,13 @@ function TeamGameLogTable({ rows }) {
 }
 
 function PlayerBoxScoreTable({ rows }) {
+  const hasListedRoles = rows?.some((row) => row.startingPosition);
   return (
     <DataTable
       rows={rows}
       columns={[
         ['playerName', 'Player'],
-        ['startingPosition', 'Role', boxScorePosition],
+        ['startingPosition', 'Role', (value) => boxScorePosition(value, hasListedRoles)],
         ['minutes', 'MIN', statCell],
         ['points', 'PTS', statCell],
         ['rebounds', 'REB', statCell],
@@ -1473,10 +1478,6 @@ function seasonTeamText(rows) {
   return rows.map((row) => cleanName(row.teamName)).filter(Boolean).join(' / ') || 'Team not listed';
 }
 
-function championshipText(value) {
-  return Array.isArray(value) && value.length ? value.join(', ') : '';
-}
-
 function readablePosition(value) {
   if (!value) return 'Role not listed';
   return String(value)
@@ -1485,8 +1486,8 @@ function readablePosition(value) {
     .join(' / ');
 }
 
-function boxScorePosition(value) {
-  return value ? readablePosition(value) : 'Bench';
+function boxScorePosition(value, hasListedRoles = true) {
+  return value ? readablePosition(value) : hasListedRoles ? 'Bench' : 'Lineup not listed';
 }
 
 function playerGameTitle(row) {
