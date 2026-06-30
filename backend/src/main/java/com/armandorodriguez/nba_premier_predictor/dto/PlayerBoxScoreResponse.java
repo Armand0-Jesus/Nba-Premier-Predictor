@@ -68,6 +68,12 @@ public record PlayerBoxScoreResponse(
         if (Boolean.FALSE.equals(stats.getHome())) {
             return game.getAwayTeamId();
         }
+        if (stats.getOpponentTeamId() != null && stats.getOpponentTeamId().equals(game.getHomeTeamId())) {
+            return game.getAwayTeamId();
+        }
+        if (stats.getOpponentTeamId() != null && stats.getOpponentTeamId().equals(game.getAwayTeamId())) {
+            return game.getHomeTeamId();
+        }
         return null;
     }
 
@@ -84,6 +90,12 @@ public record PlayerBoxScoreResponse(
         }
         if (Boolean.FALSE.equals(stats.getHome())) {
             return teamName(game.getAwayTeam(), game.getAwayTeamCity(), game.getAwayTeamName());
+        }
+        if (stats.getOpponentTeamId() != null && stats.getOpponentTeamId().equals(game.getHomeTeamId())) {
+            return teamName(game.getAwayTeam(), game.getAwayTeamCity(), game.getAwayTeamName());
+        }
+        if (stats.getOpponentTeamId() != null && stats.getOpponentTeamId().equals(game.getAwayTeamId())) {
+            return teamName(game.getHomeTeam(), game.getHomeTeamCity(), game.getHomeTeamName());
         }
         return null;
     }

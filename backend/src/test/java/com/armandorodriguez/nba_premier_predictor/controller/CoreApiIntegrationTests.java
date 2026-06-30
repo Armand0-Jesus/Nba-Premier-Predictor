@@ -1,7 +1,9 @@
 package com.armandorodriguez.nba_premier_predictor.controller;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.nullValue;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -118,6 +120,21 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.content[0].teamId").value(1610612744))
                 .andExpect(jsonPath("$.content[0].teamName").value("Golden State Warriors"))
                 .andExpect(jsonPath("$.content[0].recordAfterGame").value("2-0"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into player_game_stats (game_id, player_id, team_id, opponent_team_id, win, home, num_minutes, points, assists, blocks, steals, field_goals_attempted, field_goals_made, field_goals_percentage, rebounds_total, turnovers, plus_minus_points, starting_position) values (12300001, 893, null, 1610612747, true, true, 34.00, 27, 5, 1, 2, 20, 10, 0.500, 7, 2, 6, null)"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void playerDashboardDerivesSeasonTeamsWhenStatTeamIdIsMissing() throws Exception {
+        mockMvc.perform(get("/api/players/893/dashboard").param("season", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.seasonTeams", hasSize(1)))
+                .andExpect(jsonPath("$.seasonTeams[0].teamId").value(1610612744))
+                .andExpect(jsonPath("$.seasonTeams[0].teamName").value("Golden State Warriors"));
     }
 
     @Test
@@ -307,7 +324,8 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.homePlayers", hasSize(1)))
                 .andExpect(jsonPath("$.homePlayers[0].playerName").value("Michael Jordan"))
                 .andExpect(jsonPath("$.homePlayers[0].teamId").value(1610612744))
-                .andExpect(jsonPath("$.homePlayers[0].teamName").value("Golden State Warriors"));
+                .andExpect(jsonPath("$.homePlayers[0].teamName").value("Golden State Warriors"))
+                .andExpect(jsonPath("$.homePlayers[0].startingPosition").value(nullValue()));
     }
 
     @Test
@@ -339,6 +357,35 @@ class CoreApiIntegrationTests {
     @Sql(
             scripts = {"/test-cleanup.sql", "/test-data.sql"},
             statements = {
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, game_sub_label, arena_name, arena_city, arena_state) values (12300004, 2023, '2023-12-09 22:00:00', '2023-12-09', 1610612744, 1610612747, 'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 100, 105, 1610612747, 'NBA Emirates Cup', 'NBA Cup', 'Championship', 'T-Mobile Arena', 'Las Vegas', 'NV')"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void standingsProjectionExcludesCupChampionshipFromPreviousRecord() throws Exception {
+        mockMvc.perform(get("/api/standings/projections/2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.westernConference[0].teamId").value(1610612744))
+                .andExpect(jsonPath("$.westernConference[0].topReasons[0]").value("Previous season record: 2-0"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, arena_name, arena_city, arena_state) values (22400001, 2024, '2024-10-22 22:00:00', '2024-10-22', 1610612744, 1610612747, 'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 109, 110, 1610612747, 'Regular Season', 'Regular Season', 'Chase Center', 'San Francisco', 'CA')"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void standingsProjectionUsesOfficialCompletedRecordWhenImportedSeasonIsShort() throws Exception {
+        mockMvc.perform(get("/api/standings/projections/2025"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.westernConference[0].teamId").value(1610612747))
+                .andExpect(jsonPath("$.westernConference[0].topReasons[0]").value("Previous season record: 50-32"))
+                .andExpect(jsonPath("$.westernConference[1].topReasons[0]").value("Previous season record: 48-34"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
                     "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, game_type, game_label, arena_name, arena_city, arena_state) values (22400001, 2024, '2024-10-22 22:00:00', '2024-10-22', 1610612744, 1610612747, 'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 'Regular Season', 'Regular Season', 'Chase Center', 'San Francisco', 'CA')"
             },
             executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
@@ -349,6 +396,49 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.projectionMethod").value("Roster-aware projection with schedule context"))
                 .andExpect(jsonPath("$.westernConference", hasSize(2)))
                 .andExpect(jsonPath("$.westernConference[0].topReasons[0]").value("Schedule context included for 1 listed game"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, arena_name, arena_city, arena_state) values (14900001, 1949, '1949-12-01 20:00:00', '1949-12-01', 1610610036, 1610612744, 'Sheboygan', 'Red Skins', 'Golden State', 'Warriors', 90, 88, 1610610036, 'Regular Season', 'Regular Season', 'Test Arena', 'Sheboygan', 'WI')",
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, arena_name, arena_city, arena_state) values (15000001, 1950, '1950-12-01 20:00:00', '1950-12-01', 1610610036, 1610612744, 'Sheboygan', 'Red Skins', 'Golden State', 'Warriors', 80, 85, 1610612744, 'Regular Season', 'Regular Season', 'Test Arena', 'Sheboygan', 'WI')"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void standingsProjectionUsesTeamsFromHistoricalSeason() throws Exception {
+        mockMvc.perform(get("/api/standings/projections/1950"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.westernConference[*].teamId", hasItem(1610610036)))
+                .andExpect(jsonPath("$.westernConference[*].teamName", hasItem("Sheboygan Red Skins")))
+                .andExpect(jsonPath("$.westernConference[?(@.teamId == 1610610036)].topReasons[*]", hasItem("Previous season record: 1-0")));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, arena_name, arena_city, arena_state) values (14900001, 1949, '1949-12-01 20:00:00', '1949-12-01', 1610610036, 1610612744, 'Sheboygan', 'Red Skins', 'Golden State', 'Warriors', 90, 88, null, 'Regular Season', 'Regular Season', 'Test Arena', 'Sheboygan', 'WI')",
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, arena_name, arena_city, arena_state) values (15000001, 1950, '1950-12-01 20:00:00', '1950-12-01', 1610610036, 1610612744, 'Sheboygan', 'Red Skins', 'Golden State', 'Warriors', 80, 85, null, 'Regular Season', 'Regular Season', 'Test Arena', 'Sheboygan', 'WI')"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void standingsProjectionDerivesPreviousRecordFromScoreWhenWinnerIdIsMissing() throws Exception {
+        mockMvc.perform(get("/api/standings/projections/1950"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.westernConference[?(@.teamId == 1610610036)].topReasons[*]", hasItem("Previous season record: 1-0")));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, arena_name, arena_city, arena_state) values (14600001, 1946, '1946-11-01 20:00:00', '1946-11-01', 1610612744, 1610612747, 'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 70, 65, null, 'Regular Season', 'Regular Season', 'Test Arena', 'Philadelphia', 'PA')"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void standingsProjectionShowsNoPreviousSeasonRecordForFirstNbaSeason() throws Exception {
+        mockMvc.perform(get("/api/standings/projections/1946"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.westernConference[*].topReasons[*]", hasItem("Previous season record: No previous season record")));
     }
 
     @Test

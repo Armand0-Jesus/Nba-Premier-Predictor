@@ -108,7 +108,7 @@ public class PlayerService {
         return PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));
     }
 
-    @Cacheable(cacheNames = "playerDashboards", key = "'v5:' + #playerId + ':' + (#season == null ? 'all' : #season)")
+    @Cacheable(cacheNames = "playerDashboards", key = "'v6:' + #playerId + ':' + (#season == null ? 'all' : #season)")
     public PlayerDashboardResponse dashboard(Long playerId, Integer season) {
         Player player = findPlayer(playerId);
         PlayerAveragesResponse averages = PlayerAveragesResponse.from(playerId, season, statsRepository.findForAverages(playerId, season));

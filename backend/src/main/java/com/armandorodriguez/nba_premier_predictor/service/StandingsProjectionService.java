@@ -28,6 +28,40 @@ import com.armandorodriguez.nba_premier_predictor.exception.ResourceNotFoundExce
 public class StandingsProjectionService {
 
     private static final int FULL_SEASON_GAMES = 82;
+    private static final int FIRST_NBA_SEASON = 1946;
+    private static final Map<Integer, Map<Long, TeamRecord>> OFFICIAL_COMPLETED_RECORDS = Map.of(
+            2024,
+            Map.ofEntries(
+                    Map.entry(1610612737L, new TeamRecord(40, 42)),
+                    Map.entry(1610612738L, new TeamRecord(61, 21)),
+                    Map.entry(1610612739L, new TeamRecord(64, 18)),
+                    Map.entry(1610612740L, new TeamRecord(21, 61)),
+                    Map.entry(1610612741L, new TeamRecord(39, 43)),
+                    Map.entry(1610612742L, new TeamRecord(39, 43)),
+                    Map.entry(1610612743L, new TeamRecord(50, 32)),
+                    Map.entry(1610612744L, new TeamRecord(48, 34)),
+                    Map.entry(1610612745L, new TeamRecord(52, 30)),
+                    Map.entry(1610612746L, new TeamRecord(50, 32)),
+                    Map.entry(1610612747L, new TeamRecord(50, 32)),
+                    Map.entry(1610612748L, new TeamRecord(37, 45)),
+                    Map.entry(1610612749L, new TeamRecord(48, 34)),
+                    Map.entry(1610612750L, new TeamRecord(49, 33)),
+                    Map.entry(1610612751L, new TeamRecord(26, 56)),
+                    Map.entry(1610612752L, new TeamRecord(51, 31)),
+                    Map.entry(1610612753L, new TeamRecord(41, 41)),
+                    Map.entry(1610612754L, new TeamRecord(50, 32)),
+                    Map.entry(1610612755L, new TeamRecord(24, 58)),
+                    Map.entry(1610612756L, new TeamRecord(36, 46)),
+                    Map.entry(1610612757L, new TeamRecord(36, 46)),
+                    Map.entry(1610612758L, new TeamRecord(40, 42)),
+                    Map.entry(1610612759L, new TeamRecord(34, 48)),
+                    Map.entry(1610612760L, new TeamRecord(68, 14)),
+                    Map.entry(1610612761L, new TeamRecord(30, 52)),
+                    Map.entry(1610612762L, new TeamRecord(17, 65)),
+                    Map.entry(1610612763L, new TeamRecord(48, 34)),
+                    Map.entry(1610612764L, new TeamRecord(18, 64)),
+                    Map.entry(1610612765L, new TeamRecord(44, 38)),
+                    Map.entry(1610612766L, new TeamRecord(19, 63))));
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -122,7 +156,7 @@ public class StandingsProjectionService {
         int sourceSeason = sourceSeason(season);
         boolean scheduleAvailable = hasSchedule(season);
         Instant generatedAt = Instant.now();
-        List<TeamProjectionResponse> unseeded = currentTeams().stream()
+        List<TeamProjectionResponse> unseeded = projectionTeams(season, scheduleAvailable).stream()
                 .map(team -> projectionRow(team, season, sourceSeason))
                 .toList();
         if (scheduleAvailable) {
@@ -136,8 +170,9 @@ public class StandingsProjectionService {
     }
 
     private TeamProjectionResponse projectionRow(TeamSeed team, int season, int sourceSeason) {
-        TeamBaseline baseline = baseline(team.teamId(), sourceSeason);
-        RosterImpact impact = rosterImpact(team.teamId(), season, sourceSeason);
+        int teamSourceSeason = sourceSeasonForTeam(team.teamId(), season, sourceSeason);
+        TeamBaseline baseline = baseline(team.teamId(), teamSourceSeason);
+        RosterImpact impact = rosterImpact(team.teamId(), season, teamSourceSeason);
         double rating = ((baseline.winPercentage() - 0.5) * 20.0)
                 + baseline.pointDifferential()
                 + impact.impactScore();
@@ -147,7 +182,7 @@ public class StandingsProjectionService {
                 + (impact.turnoverScore() * 5.0)
                 + (impact.injuryRiskScore() * 3.0)
                 + (baseline.gamesPlayed() < 20 ? 4.0 : 0.0);
-        List<String> reasons = reasons(baseline, impact);
+        List<String> reasons = reasons(baseline, impact, season <= FIRST_NBA_SEASON);
         List<String> uncertaintyFactors = uncertaintyFactors(baseline, impact);
         return new TeamProjectionResponse(
                 team.teamId(),
@@ -165,8 +200,8 @@ public class StandingsProjectionService {
                 round(impact.impactScore()),
                 round(impact.turnoverScore()),
                 round(impact.injuryRiskScore()),
-                sourceSeason,
-                seasonLabel(sourceSeason),
+                teamSourceSeason,
+                seasonLabel(teamSourceSeason),
                 reasons,
                 uncertaintyFactors);
     }
@@ -334,12 +369,20 @@ public class StandingsProjectionService {
 
     private List<GameScheduleRow> scheduledGames(int season) {
         return jdbcTemplate.query("""
-                select home_team_id, away_team_id, winner_team_id
+                select home_team_id,
+                       away_team_id,
+                       case
+                           when winner_team_id is not null then winner_team_id
+                           when home_score is not null and away_score is not null and home_score > away_score then home_team_id
+                           when home_score is not null and away_score is not null and away_score > home_score then away_team_id
+                           else null
+                       end as winner_team_id
                 from games
                 where season_start_year = ?
                   and home_team_id is not null
                   and away_team_id is not null
                   and lower(coalesce(game_type, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+                  and not (lower(coalesce(game_label, '')) like '%cup%' and lower(coalesce(game_sub_label, '')) = 'championship')
                 order by game_date_time_est, game_id
                 """, (rs, rowNum) -> new GameScheduleRow(
                 nullableLong(rs, "home_team_id"),
@@ -355,8 +398,20 @@ public class StandingsProjectionService {
     private TeamBaseline baseline(Long teamId, int sourceSeason) {
         return jdbcTemplate.queryForObject("""
                 select
-                    coalesce(sum(case when g.winner_team_id = ? then 1 else 0 end), 0) as wins,
-                    coalesce(sum(case when g.winner_team_id is not null and g.winner_team_id <> ? then 1 else 0 end), 0) as losses,
+                    coalesce(sum(case
+                        when g.winner_team_id = ? then 1
+                        when g.winner_team_id is null and g.home_score is not null and g.away_score is not null
+                             and ((g.home_team_id = ? and g.home_score > g.away_score)
+                               or (g.away_team_id = ? and g.away_score > g.home_score)) then 1
+                        else 0
+                    end), 0) as wins,
+                    coalesce(sum(case
+                        when g.winner_team_id is not null and g.winner_team_id <> ? then 1
+                        when g.winner_team_id is null and g.home_score is not null and g.away_score is not null
+                             and ((g.home_team_id = ? and g.home_score < g.away_score)
+                               or (g.away_team_id = ? and g.away_score < g.home_score)) then 1
+                        else 0
+                    end), 0) as losses,
                     coalesce(avg(case
                         when t.team_score is not null and t.opponent_score is not null
                         then t.team_score - t.opponent_score
@@ -365,14 +420,16 @@ public class StandingsProjectionService {
                 left join team_game_stats t on t.game_id = g.game_id and t.team_id = ?
                 where g.season_start_year = ?
                   and lower(coalesce(g.game_type, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+                  and not (lower(coalesce(g.game_label, '')) like '%cup%' and lower(coalesce(g.game_sub_label, '')) = 'championship')
                   and (g.home_team_id = ? or g.away_team_id = ?)
                 """, (rs, rowNum) -> {
-            int wins = rs.getInt("wins");
-            int losses = rs.getInt("losses");
+            TeamRecord officialRecord = officialRecord(teamId, sourceSeason).orElse(null);
+            int wins = officialRecord == null ? rs.getInt("wins") : officialRecord.wins();
+            int losses = officialRecord == null ? rs.getInt("losses") : officialRecord.losses();
             int games = wins + losses;
             double winPercentage = games == 0 ? 0.5 : (double) wins / games;
             return new TeamBaseline(wins, losses, games, winPercentage, rs.getDouble("point_differential"));
-        }, teamId, teamId, teamId, sourceSeason, teamId, teamId);
+        }, teamId, teamId, teamId, teamId, teamId, teamId, teamId, sourceSeason, teamId, teamId);
     }
 
     private RosterImpact rosterImpact(Long teamId, int season, int sourceSeason) {
@@ -524,6 +581,7 @@ public class StandingsProjectionService {
                   and p.num_minutes is not null
                   and g.season_start_year = ?
                   and lower(coalesce(g.game_type, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+                  and not (lower(coalesce(g.game_label, '')) like '%cup%' and lower(coalesce(g.game_sub_label, '')) = 'championship')
                 """, (rs, rowNum) -> {
             int gamesPlayed = rs.getInt("games_played");
             double minutes = rs.getDouble("minutes");
@@ -541,10 +599,15 @@ public class StandingsProjectionService {
         }, playerId, sourceSeason);
     }
 
-    private List<String> reasons(TeamBaseline baseline, RosterImpact impact) {
+    private List<String> reasons(TeamBaseline baseline, RosterImpact impact, boolean noPreviousSeason) {
         List<String> reasons = new ArrayList<>();
         if (baseline.gamesPlayed() == 0) {
-            reasons.add("No recent regular-season sample found, using league-average baseline");
+            reasons.add(noPreviousSeason
+                    ? "Previous season record: No previous season record"
+                    : "Previous season record: No previous season record");
+            reasons.add(noPreviousSeason
+                    ? "First NBA season in the imported data"
+                    : "No recent regular-season sample found, using league-average baseline");
         } else {
             reasons.add("Previous season record: " + baseline.wins() + "-" + baseline.losses());
             reasons.add("Previous season point differential: " + signed(round(baseline.pointDifferential())));
@@ -689,6 +752,37 @@ public class StandingsProjectionService {
                 Optional.ofNullable(FranchiseMetadata.conference(rs.getLong("team_id"))).orElse("Western")), params.toArray());
     }
 
+    private List<TeamSeed> projectionTeams(int season, boolean scheduleAvailable) {
+        if (!scheduleAvailable) {
+            return currentTeams();
+        }
+        List<TeamSeed> teams = jdbcTemplate.query("""
+                select distinct t.team_id, t.city, t.name, t.abbreviation
+                from teams t
+                join (
+                    select home_team_id as team_id
+                    from games
+                    where season_start_year = ?
+                      and home_team_id is not null
+                      and lower(coalesce(game_type, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+                      and not (lower(coalesce(game_label, '')) like '%cup%' and lower(coalesce(game_sub_label, '')) = 'championship')
+                    union
+                    select away_team_id as team_id
+                    from games
+                    where season_start_year = ?
+                      and away_team_id is not null
+                      and lower(coalesce(game_type, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+                      and not (lower(coalesce(game_label, '')) like '%cup%' and lower(coalesce(game_sub_label, '')) = 'championship')
+                ) season_teams on season_teams.team_id = t.team_id
+                order by t.name, t.city
+                """, (rs, rowNum) -> new TeamSeed(
+                rs.getLong("team_id"),
+                rs.getString("city") + " " + rs.getString("name"),
+                rs.getString("abbreviation"),
+                Optional.ofNullable(FranchiseMetadata.conference(rs.getLong("team_id"))).orElse("Western")), season, season);
+        return teams.isEmpty() ? currentTeams() : teams;
+    }
+
     private TeamSeed findTeam(Long teamId) {
         return currentTeams().stream()
                 .filter(team -> team.teamId().equals(teamId))
@@ -711,8 +805,25 @@ public class StandingsProjectionService {
                 from games
                 where season_start_year < ?
                   and lower(coalesce(game_type, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+                  and not (lower(coalesce(game_label, '')) like '%cup%' and lower(coalesce(game_sub_label, '')) = 'championship')
                 """, Integer.class, season);
         return source == null ? season - 1 : source;
+    }
+
+    private int sourceSeasonForTeam(Long teamId, int season, int fallback) {
+        Integer source = jdbcTemplate.queryForObject("""
+                select max(season_start_year)
+                from games
+                where season_start_year < ?
+                  and lower(coalesce(game_type, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+                  and not (lower(coalesce(game_label, '')) like '%cup%' and lower(coalesce(game_sub_label, '')) = 'championship')
+                  and (home_team_id = ? or away_team_id = ?)
+                """, Integer.class, season, teamId, teamId);
+        return source == null ? fallback : source;
+    }
+
+    private static Optional<TeamRecord> officialRecord(Long teamId, int sourceSeason) {
+        return Optional.ofNullable(OFFICIAL_COMPLETED_RECORDS.getOrDefault(sourceSeason, Map.of()).get(teamId));
     }
 
     private boolean hasSchedule(int season) {
@@ -786,6 +897,9 @@ public class StandingsProjectionService {
     }
 
     private record TeamBaseline(int wins, int losses, int gamesPlayed, double winPercentage, double pointDifferential) {
+    }
+
+    private record TeamRecord(int wins, int losses) {
     }
 
     private record RosterImpact(

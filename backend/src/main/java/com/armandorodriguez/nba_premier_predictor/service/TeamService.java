@@ -60,7 +60,7 @@ public class TeamService {
         return teamResponse(findTeam(teamId));
     }
 
-    @Cacheable(cacheNames = "teamDashboards", key = "'v4:' + #teamId + ':' + (#season == null ? 'all' : #season)")
+    @Cacheable(cacheNames = "teamDashboards", key = "'v5:' + #teamId + ':' + (#season == null ? 'all' : #season)")
     public TeamDashboardResponse dashboard(Long teamId, Integer season) {
         Team team = findTeam(teamId);
         List<TeamGameLogResponse> recentGames = statsRepository

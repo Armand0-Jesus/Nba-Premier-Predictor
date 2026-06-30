@@ -115,6 +115,12 @@ public record PlayerGameLogResponse(
         if (Boolean.FALSE.equals(stats.getHome())) {
             return game.getAwayTeamId();
         }
+        if (stats.getOpponentTeamId() != null && stats.getOpponentTeamId().equals(game.getHomeTeamId())) {
+            return game.getAwayTeamId();
+        }
+        if (stats.getOpponentTeamId() != null && stats.getOpponentTeamId().equals(game.getAwayTeamId())) {
+            return game.getHomeTeamId();
+        }
         return null;
     }
 
@@ -131,6 +137,12 @@ public record PlayerGameLogResponse(
         }
         if (Boolean.FALSE.equals(stats.getHome())) {
             return teamName(game.getAwayTeam(), game.getAwayTeamCity(), game.getAwayTeamName());
+        }
+        if (stats.getOpponentTeamId() != null && stats.getOpponentTeamId().equals(game.getHomeTeamId())) {
+            return teamName(game.getAwayTeam(), game.getAwayTeamCity(), game.getAwayTeamName());
+        }
+        if (stats.getOpponentTeamId() != null && stats.getOpponentTeamId().equals(game.getAwayTeamId())) {
+            return teamName(game.getHomeTeam(), game.getHomeTeamCity(), game.getHomeTeamName());
         }
         return null;
     }
@@ -178,6 +190,13 @@ public record PlayerGameLogResponse(
         if (game == null) {
             return null;
         }
+        Long teamId = teamId(stats);
+        if (teamId != null && teamId.equals(game.getHomeTeamId())) {
+            return game.getHomeScore();
+        }
+        if (teamId != null && teamId.equals(game.getAwayTeamId())) {
+            return game.getAwayScore();
+        }
         if (Boolean.TRUE.equals(stats.getHome())) {
             return game.getHomeScore();
         }
@@ -191,6 +210,13 @@ public record PlayerGameLogResponse(
         var game = stats.getGame();
         if (game == null) {
             return null;
+        }
+        Long teamId = teamId(stats);
+        if (teamId != null && teamId.equals(game.getHomeTeamId())) {
+            return game.getAwayScore();
+        }
+        if (teamId != null && teamId.equals(game.getAwayTeamId())) {
+            return game.getHomeScore();
         }
         if (Boolean.TRUE.equals(stats.getHome())) {
             return game.getAwayScore();

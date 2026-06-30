@@ -65,20 +65,59 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
 
     @Query("""
             select new com.armandorodriguez.nba_premier_predictor.dto.PlayerSeasonTeamResponse(
-                s.teamId,
-                trim(concat(coalesce(t.city, ''), ' ', coalesce(t.name, '')))
+                case
+                    when s.teamId is not null then s.teamId
+                    when s.home = true then g.homeTeamId
+                    when s.home = false then g.awayTeamId
+                    when s.opponentTeamId = g.homeTeamId then g.awayTeamId
+                    when s.opponentTeamId = g.awayTeamId then g.homeTeamId
+                    else null
+                end,
+                case
+                    when s.teamId is not null then trim(concat(coalesce(t.city, ''), ' ', coalesce(t.name, '')))
+                    when s.home = true then trim(concat(coalesce(home.city, g.homeTeamCity, ''), ' ', coalesce(home.name, g.homeTeamName, '')))
+                    when s.home = false then trim(concat(coalesce(away.city, g.awayTeamCity, ''), ' ', coalesce(away.name, g.awayTeamName, '')))
+                    when s.opponentTeamId = g.homeTeamId then trim(concat(coalesce(away.city, g.awayTeamCity, ''), ' ', coalesce(away.name, g.awayTeamName, '')))
+                    when s.opponentTeamId = g.awayTeamId then trim(concat(coalesce(home.city, g.homeTeamCity, ''), ' ', coalesce(home.name, g.homeTeamName, '')))
+                    else null
+                end
             )
             from PlayerGameStats s
             join s.game g
             left join s.team t
+            left join g.homeTeam home
+            left join g.awayTeam away
             where s.playerId = :playerId
               and (:season is null or g.seasonStartYear = :season)
               and lower(coalesce(g.gameType, '')) in ('regular season', 'playoffs', 'nba emirates cup', 'in-season tournament')
-              and s.teamId is not null
               and s.numMinutes is not null
               and s.numMinutes > 0
-            group by s.teamId, t.city, t.name
-            order by min(g.gameDateTimeEst)
+            group by
+                case
+                    when s.teamId is not null then s.teamId
+                    when s.home = true then g.homeTeamId
+                    when s.home = false then g.awayTeamId
+                    when s.opponentTeamId = g.homeTeamId then g.awayTeamId
+                    when s.opponentTeamId = g.awayTeamId then g.homeTeamId
+                    else null
+                end,
+                case
+                    when s.teamId is not null then trim(concat(coalesce(t.city, ''), ' ', coalesce(t.name, '')))
+                    when s.home = true then trim(concat(coalesce(home.city, g.homeTeamCity, ''), ' ', coalesce(home.name, g.homeTeamName, '')))
+                    when s.home = false then trim(concat(coalesce(away.city, g.awayTeamCity, ''), ' ', coalesce(away.name, g.awayTeamName, '')))
+                    when s.opponentTeamId = g.homeTeamId then trim(concat(coalesce(away.city, g.awayTeamCity, ''), ' ', coalesce(away.name, g.awayTeamName, '')))
+                    when s.opponentTeamId = g.awayTeamId then trim(concat(coalesce(home.city, g.homeTeamCity, ''), ' ', coalesce(home.name, g.homeTeamName, '')))
+                    else null
+                end
+            having case
+                    when s.teamId is not null then s.teamId
+                    when s.home = true then g.homeTeamId
+                    when s.home = false then g.awayTeamId
+                    when s.opponentTeamId = g.homeTeamId then g.awayTeamId
+                    when s.opponentTeamId = g.awayTeamId then g.homeTeamId
+                    else null
+                end is not null
+            order by min(g.gameDate), min(g.gameDateTimeEst)
             """)
     List<PlayerSeasonTeamResponse> findSeasonTeams(@Param("playerId") Long playerId, @Param("season") Integer season);
 

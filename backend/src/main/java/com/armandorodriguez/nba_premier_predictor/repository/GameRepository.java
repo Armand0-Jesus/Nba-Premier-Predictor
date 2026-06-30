@@ -43,10 +43,18 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             from Game g
             where (:season is null or g.seasonStartYear = :season)
               and lower(coalesce(g.gameType, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+              and not (lower(coalesce(g.gameLabel, '')) like '%cup%' and lower(coalesce(g.gameSubLabel, '')) = 'championship')
               and (g.homeTeamId = :teamId or g.awayTeamId = :teamId)
-              and g.winnerTeamId is not null
-              and ((:win = true and g.winnerTeamId = :teamId)
-                or (:win = false and g.winnerTeamId <> :teamId))
+              and ((:win = true and (
+                    g.winnerTeamId = :teamId
+                    or (g.winnerTeamId is null and g.homeScore is not null and g.awayScore is not null
+                        and ((g.homeTeamId = :teamId and g.homeScore > g.awayScore)
+                            or (g.awayTeamId = :teamId and g.awayScore > g.homeScore)))))
+                or (:win = false and (
+                    (g.winnerTeamId is not null and g.winnerTeamId <> :teamId)
+                    or (g.winnerTeamId is null and g.homeScore is not null and g.awayScore is not null
+                        and ((g.homeTeamId = :teamId and g.homeScore < g.awayScore)
+                            or (g.awayTeamId = :teamId and g.awayScore < g.homeScore))))))
             """)
     long countRegularSeasonResults(
             @Param("teamId") Long teamId,
@@ -58,11 +66,19 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             from Game g
             where (:season is null or g.seasonStartYear = :season)
               and lower(coalesce(g.gameType, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
+              and not (lower(coalesce(g.gameLabel, '')) like '%cup%' and lower(coalesce(g.gameSubLabel, '')) = 'championship')
               and (g.homeTeamId = :teamId or g.awayTeamId = :teamId)
               and g.gameDate <= :through
-              and g.winnerTeamId is not null
-              and ((:win = true and g.winnerTeamId = :teamId)
-                or (:win = false and g.winnerTeamId <> :teamId))
+              and ((:win = true and (
+                    g.winnerTeamId = :teamId
+                    or (g.winnerTeamId is null and g.homeScore is not null and g.awayScore is not null
+                        and ((g.homeTeamId = :teamId and g.homeScore > g.awayScore)
+                            or (g.awayTeamId = :teamId and g.awayScore > g.homeScore)))))
+                or (:win = false and (
+                    (g.winnerTeamId is not null and g.winnerTeamId <> :teamId)
+                    or (g.winnerTeamId is null and g.homeScore is not null and g.awayScore is not null
+                        and ((g.homeTeamId = :teamId and g.homeScore < g.awayScore)
+                            or (g.awayTeamId = :teamId and g.awayScore < g.homeScore))))))
             """)
     long countRegularSeasonResultsThrough(
             @Param("teamId") Long teamId,
@@ -77,9 +93,16 @@ public interface GameRepository extends JpaRepository<Game, Long> {
               and lower(coalesce(g.gameType, '')) = 'playoffs'
               and (g.homeTeamId = :teamId or g.awayTeamId = :teamId)
               and g.gameDate <= :through
-              and g.winnerTeamId is not null
-              and ((:win = true and g.winnerTeamId = :teamId)
-                or (:win = false and g.winnerTeamId <> :teamId))
+              and ((:win = true and (
+                    g.winnerTeamId = :teamId
+                    or (g.winnerTeamId is null and g.homeScore is not null and g.awayScore is not null
+                        and ((g.homeTeamId = :teamId and g.homeScore > g.awayScore)
+                            or (g.awayTeamId = :teamId and g.awayScore > g.homeScore)))))
+                or (:win = false and (
+                    (g.winnerTeamId is not null and g.winnerTeamId <> :teamId)
+                    or (g.winnerTeamId is null and g.homeScore is not null and g.awayScore is not null
+                        and ((g.homeTeamId = :teamId and g.homeScore < g.awayScore)
+                            or (g.awayTeamId = :teamId and g.awayScore < g.homeScore))))))
             """)
     long countPlayoffResultsThrough(
             @Param("teamId") Long teamId,
