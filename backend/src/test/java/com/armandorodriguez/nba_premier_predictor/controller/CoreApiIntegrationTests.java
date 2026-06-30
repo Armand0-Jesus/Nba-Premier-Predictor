@@ -361,6 +361,21 @@ class CoreApiIntegrationTests {
     @Sql(
             scripts = {"/test-cleanup.sql", "/test-data.sql"},
             statements = {
+                    "insert into transactions (player_id, from_team_id, to_team_id, transaction_type, transaction_date, source, source_status, confidence, affects_projection, notes) values (201939, 1610612744, 1610612747, 'trade', '2024-07-01', 'trusted-feed', 'trusted_report', 0.5000, true, 'low-confidence report should not affect projection')"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void lowConfidenceTransactionDoesNotAffectProjection() throws Exception {
+        mockMvc.perform(get("/api/teams/1610612747/roster-impact").param("season", "2024"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.playersAdded").value(0))
+                .andExpect(jsonPath("$.rosterImpactScore").value(0.0))
+                .andExpect(jsonPath("$.explanations[0]").value("No major confirmed roster movement found for this projection window"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
                     "insert into draft_picks (player_id, team_id, draft_year, draft_round, draft_number, rookie_season_start_year) values (null, 1610612747, 2024, 1, 1, 2024)"
             },
             executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
