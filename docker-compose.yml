@@ -10,12 +10,73 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nba -d nba_premier_predictor"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7
     container_name: nba-premier-redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ml-service:
+    build:
+      context: ./ml-service
+    container_name: nba-premier-ml-service
+    environment:
+      BACKEND_API_URL: http://backend:8080
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ml-service/artifacts:/app/artifacts
+
+  backend:
+    build:
+      context: ./backend
+    container_name: nba-premier-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/nba_premier_predictor
+      SPRING_DATASOURCE_USERNAME: nba
+      SPRING_DATASOURCE_PASSWORD: nba
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      ML_SERVICE_URL: http://ml-service:8000
+      NBA_RATE_LIMIT_ENABLED: "true"
+      NBA_PREDICTION_CACHE_ENABLED: "true"
+      NBA_SEARCH_CACHE_ENABLED: "true"
+      NBA_IMPORT_ENABLED: ${NBA_IMPORT_ENABLED:-false}
+      NBA_IMPORT_PATH: ${NBA_IMPORT_PATH:-/data/archive.zip}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ml-service:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: nba-premier-frontend
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8080
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_started
 
 volumes:
   postgres-data:
