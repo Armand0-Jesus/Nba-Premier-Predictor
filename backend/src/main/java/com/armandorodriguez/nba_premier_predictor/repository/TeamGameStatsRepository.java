@@ -27,7 +27,7 @@ public interface TeamGameStatsRepository extends JpaRepository<TeamGameStats, Lo
                     coalesce(g.gameLabel, ''), ' ', coalesce(g.gameSubLabel, ''), ' ',
                     cast(g.id as string), ' ', cast(g.gameDate as string)
                   )) like :query)
-            order by g.gameDateTimeEst desc
+            order by g.gameDate desc, g.gameDateTimeEst desc
             """, countQuery = """
             select count(s)
             from TeamGameStats s

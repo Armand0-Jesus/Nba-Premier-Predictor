@@ -1,6 +1,6 @@
 package com.armandorodriguez.nba_premier_predictor.repository;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.data.domain.Page;
@@ -59,7 +59,7 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             where (:season is null or g.seasonStartYear = :season)
               and lower(coalesce(g.gameType, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
               and (g.homeTeamId = :teamId or g.awayTeamId = :teamId)
-              and g.gameDateTimeEst <= :through
+              and g.gameDate <= :through
               and g.winnerTeamId is not null
               and ((:win = true and g.winnerTeamId = :teamId)
                 or (:win = false and g.winnerTeamId <> :teamId))
@@ -68,7 +68,7 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             @Param("teamId") Long teamId,
             @Param("season") Integer season,
             @Param("win") boolean win,
-            @Param("through") LocalDateTime through);
+            @Param("through") LocalDate through);
 
     @Query("""
             select count(g)
@@ -76,7 +76,7 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             where (:season is null or g.seasonStartYear = :season)
               and lower(coalesce(g.gameType, '')) = 'playoffs'
               and (g.homeTeamId = :teamId or g.awayTeamId = :teamId)
-              and g.gameDateTimeEst <= :through
+              and g.gameDate <= :through
               and g.winnerTeamId is not null
               and ((:win = true and g.winnerTeamId = :teamId)
                 or (:win = false and g.winnerTeamId <> :teamId))
@@ -85,7 +85,7 @@ public interface GameRepository extends JpaRepository<Game, Long> {
             @Param("teamId") Long teamId,
             @Param("season") Integer season,
             @Param("win") boolean win,
-            @Param("through") LocalDateTime through);
+            @Param("through") LocalDate through);
 
     @Query("""
             select distinct g.seasonStartYear + 1

@@ -122,7 +122,7 @@ public class PlayerService {
 
     private PlayerGameLogResponse withRecordAfterGame(PlayerGameLogResponse row, Integer requestedSeason) {
         Integer season = requestedSeason == null ? row.seasonStartYear() : requestedSeason;
-        return row.withRecordAfterGame(gameLogRecordService.recordAfterGame(row.teamId(), season, row.gameType(), row.gameDateTimeEst()));
+        return row.withRecordAfterGame(gameLogRecordService.recordAfterGame(row.teamId(), season, row.gameType(), row.gameDate()));
     }
 
     private Player findPlayer(Long playerId) {

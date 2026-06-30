@@ -28,7 +28,7 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
                     coalesce(g.gameLabel, ''), ' ', coalesce(g.gameSubLabel, ''), ' ',
                     cast(g.id as string), ' ', cast(g.gameDate as string)
                   )) like :query)
-            order by g.gameDateTimeEst desc
+            order by g.gameDate desc, g.gameDateTimeEst desc
             """, countQuery = """
             select count(s)
             from PlayerGameStats s
@@ -59,7 +59,7 @@ public interface PlayerGameStatsRepository extends JpaRepository<PlayerGameStats
               and lower(coalesce(g.gameType, '')) in ('regular season', 'nba emirates cup', 'in-season tournament')
               and s.numMinutes is not null
               and s.numMinutes > 0
-            order by g.gameDateTimeEst desc
+            order by g.gameDate desc, g.gameDateTimeEst desc
             """)
     List<PlayerGameStats> findForAverages(@Param("playerId") Long playerId, @Param("season") Integer season);
 

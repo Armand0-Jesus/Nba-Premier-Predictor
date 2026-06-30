@@ -32,8 +32,8 @@ public record PlayerBoxScoreResponse(
         return new PlayerBoxScoreResponse(
                 stats.getPlayerId(),
                 stats.getPlayer() == null ? null : stats.getPlayer().getFullName(),
-                stats.getTeamId(),
-                stats.getTeam() == null ? null : stats.getTeam().getFullName(),
+                teamId(stats),
+                teamName(stats),
                 stats.getStartingPosition(),
                 stats.getNumMinutes(),
                 stats.getPoints(),
@@ -52,5 +52,43 @@ public record PlayerBoxScoreResponse(
                 stats.getFreeThrowsAttempted(),
                 stats.getFoulsPersonal(),
                 stats.getComment());
+    }
+
+    private static Long teamId(PlayerGameStats stats) {
+        if (stats.getTeamId() != null) {
+            return stats.getTeamId();
+        }
+        var game = stats.getGame();
+        if (game == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(stats.getHome())) {
+            return game.getHomeTeamId();
+        }
+        if (Boolean.FALSE.equals(stats.getHome())) {
+            return game.getAwayTeamId();
+        }
+        return null;
+    }
+
+    private static String teamName(PlayerGameStats stats) {
+        if (stats.getTeam() != null) {
+            return stats.getTeam().getFullName();
+        }
+        var game = stats.getGame();
+        if (game == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(stats.getHome())) {
+            return teamName(game.getHomeTeam(), game.getHomeTeamCity(), game.getHomeTeamName());
+        }
+        if (Boolean.FALSE.equals(stats.getHome())) {
+            return teamName(game.getAwayTeam(), game.getAwayTeamCity(), game.getAwayTeamName());
+        }
+        return null;
+    }
+
+    private static String teamName(com.armandorodriguez.nba_premier_predictor.domain.Team team, String city, String name) {
+        return team == null ? String.join(" ", city == null ? "" : city, name == null ? "" : name).trim() : team.getFullName();
     }
 }

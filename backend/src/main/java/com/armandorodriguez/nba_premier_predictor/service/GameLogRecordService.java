@@ -1,6 +1,6 @@
 package com.armandorodriguez.nba_premier_predictor.service;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.Locale;
 
 import org.springframework.stereotype.Service;
@@ -16,7 +16,7 @@ public class GameLogRecordService {
         this.gameRepository = gameRepository;
     }
 
-    public String recordAfterGame(Long teamId, Integer season, String gameType, LocalDateTime through) {
+    public String recordAfterGame(Long teamId, Integer season, String gameType, LocalDate through) {
         if (teamId == null || through == null) {
             return null;
         }

@@ -1,6 +1,7 @@
 package com.armandorodriguez.nba_premier_predictor.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import com.armandorodriguez.nba_premier_predictor.domain.TeamGameStats;
@@ -10,6 +11,7 @@ public record TeamGameLogResponse(
         Integer seasonStartYear,
         String seasonLabel,
         LocalDateTime gameDateTimeEst,
+        LocalDate gameDate,
         Long teamId,
         String teamName,
         Long opponentTeamId,
@@ -39,6 +41,7 @@ public record TeamGameLogResponse(
                 game == null ? null : game.getSeasonStartYear(),
                 game == null ? null : SeasonResponse.label(game.getSeasonStartYear()),
                 game == null ? null : game.getGameDateTimeEst(),
+                game == null ? null : game.getGameDate(),
                 stats.getTeamId(),
                 stats.getTeam() == null ? null : stats.getTeam().getFullName(),
                 stats.getOpponentTeamId(),
@@ -68,6 +71,7 @@ public record TeamGameLogResponse(
                 seasonStartYear,
                 seasonLabel,
                 gameDateTimeEst,
+                gameDate,
                 teamId,
                 teamName,
                 opponentTeamId,

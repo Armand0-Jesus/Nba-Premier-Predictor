@@ -1,6 +1,7 @@
 package com.armandorodriguez.nba_premier_predictor.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import com.armandorodriguez.nba_premier_predictor.domain.PlayerGameStats;
@@ -10,6 +11,7 @@ public record PlayerGameLogResponse(
         Integer seasonStartYear,
         String seasonLabel,
         LocalDateTime gameDateTimeEst,
+        LocalDate gameDate,
         Long teamId,
         String teamName,
         Long opponentTeamId,
@@ -41,8 +43,9 @@ public record PlayerGameLogResponse(
                 game == null ? null : game.getSeasonStartYear(),
                 game == null ? null : SeasonResponse.label(game.getSeasonStartYear()),
                 game == null ? null : game.getGameDateTimeEst(),
-                stats.getTeamId(),
-                stats.getTeam() == null ? null : stats.getTeam().getFullName(),
+                game == null ? null : game.getGameDate(),
+                teamId(stats),
+                teamName(stats),
                 opponentTeamId(stats),
                 opponentName(stats),
                 stats.getHome(),
@@ -72,6 +75,7 @@ public record PlayerGameLogResponse(
                 seasonStartYear,
                 seasonLabel,
                 gameDateTimeEst,
+                gameDate,
                 teamId,
                 teamName,
                 opponentTeamId,
@@ -95,6 +99,40 @@ public record PlayerGameLogResponse(
                 plusMinus,
                 startingPosition,
                 comment);
+    }
+
+    private static Long teamId(PlayerGameStats stats) {
+        if (stats.getTeamId() != null) {
+            return stats.getTeamId();
+        }
+        var game = stats.getGame();
+        if (game == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(stats.getHome())) {
+            return game.getHomeTeamId();
+        }
+        if (Boolean.FALSE.equals(stats.getHome())) {
+            return game.getAwayTeamId();
+        }
+        return null;
+    }
+
+    private static String teamName(PlayerGameStats stats) {
+        if (stats.getTeam() != null) {
+            return stats.getTeam().getFullName();
+        }
+        var game = stats.getGame();
+        if (game == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(stats.getHome())) {
+            return teamName(game.getHomeTeam(), game.getHomeTeamCity(), game.getHomeTeamName());
+        }
+        if (Boolean.FALSE.equals(stats.getHome())) {
+            return teamName(game.getAwayTeam(), game.getAwayTeamCity(), game.getAwayTeamName());
+        }
+        return null;
     }
 
     private static String opponentName(PlayerGameStats stats) {

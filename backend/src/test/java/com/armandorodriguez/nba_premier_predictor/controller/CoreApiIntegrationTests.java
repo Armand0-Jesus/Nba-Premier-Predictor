@@ -105,6 +105,42 @@ class CoreApiIntegrationTests {
     }
 
     @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into player_game_stats (game_id, player_id, team_id, opponent_team_id, win, home, num_minutes, points, assists, blocks, steals, field_goals_attempted, field_goals_made, field_goals_percentage, rebounds_total, turnovers, plus_minus_points, starting_position) values (12300001, 893, null, 1610612747, true, true, 34.00, 27, 5, 1, 2, 20, 10, 0.500, 7, 2, 6, null)"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void playerGamesDeriveTeamAndRecordWhenStatTeamIdIsMissing() throws Exception {
+        mockMvc.perform(get("/api/players/893/games").param("season", "2023"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].teamId").value(1610612744))
+                .andExpect(jsonPath("$.content[0].teamName").value("Golden State Warriors"))
+                .andExpect(jsonPath("$.content[0].recordAfterGame").value("2-0"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, arena_name, arena_city, arena_state) values (12390002, 2023, null, '2024-01-20', 1610612744, 1610612747, 'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 121, 110, 1610612744, 'Regular Season', 'Regular Season', 'Chase Center', 'San Francisco', 'CA')",
+                    "insert into player_game_stats (game_id, player_id, team_id, opponent_team_id, win, home, num_minutes, points, assists, blocks, steals, field_goals_attempted, field_goals_made, field_goals_percentage, rebounds_total, turnovers, plus_minus_points, starting_position) values (12390002, 893, null, null, true, true, 34.00, 27, 5, 1, 2, 20, 10, 0.500, 7, 2, 6, null)"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void playerGamesDeriveRecordWhenStatTeamIdAndGameDateTimeAreMissing() throws Exception {
+        mockMvc.perform(get("/api/players/893/games")
+                        .param("season", "2023")
+                        .param("query", "12390002"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].teamId").value(1610612744))
+                .andExpect(jsonPath("$.content[0].teamName").value("Golden State Warriors"))
+                .andExpect(jsonPath("$.content[0].opponentTeamName").value("Los Angeles Lakers"))
+                .andExpect(jsonPath("$.content[0].recordAfterGame").value("3-0"));
+    }
+
+    @Test
     void playerGamesEndpointSupportsOpponentSearch() throws Exception {
         mockMvc.perform(get("/api/players/201939/games")
                         .param("season", "2023")
@@ -255,6 +291,23 @@ class CoreApiIntegrationTests {
                 .andExpect(jsonPath("$.awayPlayers", hasSize(1)))
                 .andExpect(jsonPath("$.homePlayers[0].playerName").value("Stephen Curry"))
                 .andExpect(jsonPath("$.awayPlayers[0].playerName").value("LeBron James"));
+    }
+
+    @Test
+    @Sql(
+            scripts = {"/test-cleanup.sql", "/test-data.sql"},
+            statements = {
+                    "insert into games (game_id, season_start_year, game_date_time_est, game_date, home_team_id, away_team_id, home_team_city, home_team_name, away_team_city, away_team_name, home_score, away_score, winner_team_id, game_type, game_label, arena_name, arena_city, arena_state) values (12390003, 2023, null, '2024-01-20', 1610612744, 1610612747, 'Golden State', 'Warriors', 'Los Angeles', 'Lakers', 121, 110, 1610612744, 'Regular Season', 'Regular Season', 'Chase Center', 'San Francisco', 'CA')",
+                    "insert into player_game_stats (game_id, player_id, team_id, opponent_team_id, win, home, num_minutes, points, assists, blocks, steals, field_goals_attempted, field_goals_made, field_goals_percentage, rebounds_total, turnovers, plus_minus_points, starting_position) values (12390003, 893, null, 1610612747, true, true, 34.00, 27, 5, 1, 2, 20, 10, 0.500, 7, 2, 6, null)"
+            },
+            executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+    void gameBoxScoreKeepsPlayerRowsWhenStatTeamIdIsMissing() throws Exception {
+        mockMvc.perform(get("/api/games/12390003/box-score"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.homePlayers", hasSize(1)))
+                .andExpect(jsonPath("$.homePlayers[0].playerName").value("Michael Jordan"))
+                .andExpect(jsonPath("$.homePlayers[0].teamId").value(1610612744))
+                .andExpect(jsonPath("$.homePlayers[0].teamName").value("Golden State Warriors"));
     }
 
     @Test
