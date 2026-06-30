@@ -12,14 +12,23 @@ import org.springframework.stereotype.Service;
 @Service
 class HttpContextRefreshSourceClient implements ContextRefreshSourceClient {
 
+    private static final String TRUSTED_NEWS_PREFIX = "trusted-news:";
+
     private final HttpClient httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(10))
             .build();
+    private final TrustedNewsContextAdapter trustedNewsContextAdapter;
+
+    HttpContextRefreshSourceClient(TrustedNewsContextAdapter trustedNewsContextAdapter) {
+        this.trustedNewsContextAdapter = trustedNewsContextAdapter;
+    }
 
     @Override
     public String fetch(String sourceUrl) {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(sourceUrl))
+        boolean trustedNews = sourceUrl.startsWith(TRUSTED_NEWS_PREFIX);
+        String fetchUrl = trustedNews ? sourceUrl.substring(TRUSTED_NEWS_PREFIX.length()) : sourceUrl;
+        HttpRequest request = HttpRequest.newBuilder(URI.create(fetchUrl))
                 .timeout(Duration.ofSeconds(20))
                 .GET()
                 .build();
@@ -28,7 +37,7 @@ class HttpContextRefreshSourceClient implements ContextRefreshSourceClient {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalStateException("Context source returned HTTP " + response.statusCode());
             }
-            return response.body();
+            return trustedNews ? trustedNewsContextAdapter.toContextJson(fetchUrl, response.body()) : response.body();
         } catch (IOException ex) {
             throw new IllegalStateException("Could not read context source", ex);
         } catch (InterruptedException ex) {
