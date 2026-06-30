@@ -16,6 +16,7 @@ const bannedNormalCopy = [
   'MISS RATE',
   'FLOOR CEILING',
   'PTS REB AST',
+  'Not listed',
 ];
 
 describe('NBA Premier Predictor frontend', () => {
@@ -55,7 +56,7 @@ describe('NBA Premier Predictor frontend', () => {
     }
   });
 
-  test('shows Active for active players and readable positions', async () => {
+  test('shows Present for active players and readable positions', async () => {
     const user = userEvent.setup();
     window.history.pushState({}, '', '/players');
 
@@ -66,7 +67,7 @@ describe('NBA Premier Predictor frontend', () => {
 
     expect(await screen.findByText('Stephen Curry')).toBeInTheDocument();
     expect(screen.getByText('Guard')).toBeInTheDocument();
-    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(screen.getByText('Present')).toBeInTheDocument();
   });
 
   test('shows final season for retired players', async () => {
@@ -79,7 +80,7 @@ describe('NBA Premier Predictor frontend', () => {
 
     expect(await screen.findByText('Michael Jordan')).toBeInTheDocument();
     expect(screen.getByText('2002-03')).toBeInTheDocument();
-    expect(screen.queryByText('Active')).not.toBeInTheDocument();
+    expect(screen.queryByText('Present')).not.toBeInTheDocument();
   });
 
   test('teams page asks for current NBA teams by default', async () => {
@@ -114,7 +115,7 @@ describe('NBA Premier Predictor frontend', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: /Los Angeles Lakers at Golden State Warriors/i })).toBeInTheDocument();
-    expect(screen.getAllByText('Lineup not listed').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Lineup pending').length).toBeGreaterThan(0);
     expect(screen.queryByText('Bench')).not.toBeInTheDocument();
   });
 
@@ -135,6 +136,9 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.getByText('Steals')).toBeInTheDocument();
     expect(screen.getByText('Blocks')).toBeInTheDocument();
     expect(screen.getByText('Turnovers')).toBeInTheDocument();
+    expect(screen.getByText(/2 STL/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 BLK/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 TO/i)).toBeInTheDocument();
     expect(screen.queryByText('Fantasy Points')).not.toBeInTheDocument();
     expect(screen.queryByText('Confidence')).not.toBeInTheDocument();
     expect(screen.queryByText('How this was calculated')).not.toBeInTheDocument();
@@ -188,23 +192,27 @@ describe('NBA Premier Predictor frontend', () => {
   });
 
   test('standings page shows next-season projections without raw ids', async () => {
-    const user = userEvent.setup();
     window.history.pushState({}, '', '/standings');
 
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Standings Projection' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '2026-2027' })).toBeInTheDocument();
     expect(await screen.findByText('Western Conference')).toBeInTheDocument();
     expect(screen.getByText('Golden State Warriors')).toBeInTheDocument();
-    expect(screen.getByText('Not released')).toBeInTheDocument();
-    expect(screen.getByText('Using team strength')).toBeInTheDocument();
-    expect(screen.getByText('Previous season record: 48-34')).toBeInTheDocument();
+    expect(screen.getAllByText('Projected Record')).toHaveLength(2);
+    expect(screen.getAllByText('Range Of Wins')).toHaveLength(2);
+    expect(screen.getAllByText('Previous Season Record')).toHaveLength(2);
+    expect(screen.getByText('50-32')).toBeInTheDocument();
+    expect(screen.getByText('43-56')).toBeInTheDocument();
+    expect(screen.getByText('48-34')).toBeInTheDocument();
+    expect(screen.queryByText('Not released')).not.toBeInTheDocument();
+    expect(screen.queryByText('Using team strength')).not.toBeInTheDocument();
+    expect(screen.queryByText('Run Range')).not.toBeInTheDocument();
+    expect(screen.queryByText('Latest Range Run')).not.toBeInTheDocument();
+    expect(screen.queryByText('Details')).not.toBeInTheDocument();
+    expect(screen.queryByText('GSW')).not.toBeInTheDocument();
     expect(screen.queryByText('1610612744')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /Run Range/i }));
-    expect(await screen.findByText('Latest Range Run')).toBeInTheDocument();
-    expect(screen.getByText(/Schedule-free Monte Carlo/i)).toBeInTheDocument();
-    expect(window.fetch).toHaveBeenCalledWith('/api/standings/simulate?season=2026&runs=1000', expect.objectContaining({ method: 'POST' }));
   });
 
   test('team projection page explains roster movement naturally', async () => {
@@ -240,7 +248,9 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.getByText(/Average miss 4.2/i)).toBeInTheDocument();
     expect(screen.getByText(/Player Stat Points missed by 4.2/i)).toBeInTheDocument();
     expect(screen.queryByText('Advanced model info')).not.toBeInTheDocument();
+    expect(screen.queryByText('Version names')).not.toBeInTheDocument();
     expect(screen.queryByText(/player-baseline-v1/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/player-baseline-v2-20260629120000/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Update completed games/i }));
     expect(window.fetch).toHaveBeenCalledWith('/api/model/prediction-errors/refresh', expect.objectContaining({ method: 'POST' }));
   });
