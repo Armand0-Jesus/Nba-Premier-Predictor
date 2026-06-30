@@ -274,7 +274,7 @@ function StandingsPage() {
   const waitingForContext = allRows.length > 0 && allRows.every((row) => Number(row.rosterImpactScore || 0) === 0);
 
   return (
-    <Page title="Standings Projection" eyebrow="next season">
+    <Page title="Standings Projection" eyebrow="season">
       <ErrorBanner message={result.error || seasons.error} />
       <section className="panel">
         <div className="toolbar">
@@ -288,7 +288,7 @@ function StandingsPage() {
           </Field>
         </div>
         {waitingForContext && (
-          <p className="quiet-copy">Based on last season until confirmed roster updates are loaded.</p>
+          <p className="quiet-copy">Based on simulation run with context ingestion like roster updates and other factors</p>
         )}
       </section>
       <section className="split">
@@ -461,13 +461,13 @@ function TeamDetailPage() {
             <div>
               <span>{data.team.abbreviation || 'NBA'}</span>
               <strong>{cleanName(data.team.fullName) || 'Team'}</strong>
-              <p>Founded {data.team.seasonFounded || 'Year pending'}</p>
+              <p>Founded {data.team.seasonFounded || 'Year unavailable'}</p>
             </div>
           </section>
           <div className="dashboard-grid">
             <StatusPanel title="Record" value={teamRecordText(data.regularSeasonRecord)} subvalue={seasonLabel(season)} icon={Trophy} />
             <StatusPanel title="Win Rate" value={teamWinRateText(data.regularSeasonRecord)} subvalue="Regular season" icon={Gauge} />
-            <StatusPanel title="Conference" value={data.team.conference || 'Conference pending'} icon={CalendarDays} />
+            <StatusPanel title="Conference" value={data.team.conference || 'Conference unavailable'} icon={CalendarDays} />
           </div>
           <section className="panel panel-wide">
             <PanelHeader title="Recent Team Scores" icon={BarChart3} />
@@ -988,7 +988,8 @@ function EntityList({
   const path = requireQuery && !hasQuery ? null : `${endpoint}?${search.toString()}`;
   const result = useApi(path);
   const rows = pageItems(result.data);
-  const emptyLabel = !path ? emptyBeforeSearch : result.loading ? `Loading ${title.toLowerCase()}` : result.error || 'No rows found';
+  const emptyFallback = title === 'Teams' ? 'No teams found' : 'No rows found';
+  const emptyLabel = !path ? emptyBeforeSearch : result.loading ? `Loading ${title.toLowerCase()}` : result.error || emptyFallback;
 
   return (
     <Page title={title} eyebrow="browse">
@@ -1582,7 +1583,7 @@ function StatusPanel({ title, value, subvalue, error, icon: Icon }) {
   return (
     <section className={`panel status-panel ${error ? 'panel-error' : ''}`}>
       <PanelHeader title={title} icon={Icon} />
-      <strong>{error ? 'Needs attention' : value || 'Pending'}</strong>
+      <strong>{error ? 'Needs attention' : value || 'No data'}</strong>
       {(error || subvalue) && <span>{error || subvalue}</span>}
     </section>
   );
@@ -1720,7 +1721,7 @@ function runStatusText(value) {
   if (text === 'completed') return 'Completed';
   if (text === 'failed') return 'Needs attention';
   if (text === 'running') return 'Running';
-  return 'Status pending';
+  return 'Not started';
 }
 
 function trainingRangeText(value) {
@@ -1764,33 +1765,33 @@ function fieldGoalText(value) {
 }
 
 function teamRecordText(record) {
-  if (!record) return 'Record pending';
+  if (!record) return 'Insufficient data';
   return `${record.wins || 0}-${record.losses || 0}`;
 }
 
 function teamWinRateText(record) {
-  if (!record) return 'Pending';
+  if (!record) return 'Insufficient data';
   return percent(record.winPercentage);
 }
 
 function winRangeText(row) {
-  if (!row) return 'Range pending';
+  if (!row) return 'Insufficient data';
   const low = roundedNumber(row.lowWins);
   const high = roundedNumber(row.highWins);
-  if (low === null || high === null) return 'Range pending';
+  if (low === null || high === null) return 'Insufficient data';
   return `${clampWins(low)}-${clampWins(high)}`;
 }
 
 function projectedRecordText(row) {
   const wins = roundedNumber(row?.projectedWins);
-  if (wins === null) return 'Record pending';
+  if (wins === null) return 'Insufficient data';
   const roundedWins = clampWins(wins);
   return `${roundedWins}-${82 - roundedWins}`;
 }
 
 function previousSeasonRecordText(row) {
-  const reason = row?.topReasons?.find((item) => String(item).startsWith('Previous season record:'));
-  return reason ? reason.replace('Previous season record:', '').trim() : 'Record pending';
+  const reason = row?.topReasons?.find((item) => /previous season record:/i.test(String(item)));
+  return reason ? String(reason).replace(/previous season record:\s*/i, '').trim() : 'Insufficient data';
 }
 
 function standingsSeasonOptions(payload, nextSeason) {
@@ -1817,15 +1818,15 @@ function clampWins(value) {
 }
 
 function seasonLabel(value) {
-  if (value === null || value === undefined || value === '') return 'Season pending';
+  if (value === null || value === undefined || value === '') return 'Season';
   const start = Number(value);
-  return Number.isFinite(start) ? `${start}-${start + 1}` : 'Season pending';
+  return Number.isFinite(start) ? `${start}-${start + 1}` : 'Season';
 }
 
 function compactSeasonLabel(value) {
-  if (value === null || value === undefined || value === '') return 'Season pending';
+  if (value === null || value === undefined || value === '') return 'Season';
   const start = Number(value);
-  return Number.isFinite(start) ? `${start}-${String(start + 1).slice(-2)}` : 'Season pending';
+  return Number.isFinite(start) ? `${start}-${String(start + 1).slice(-2)}` : 'Season';
 }
 
 function formatColumn(row, [key, , formatter]) {
@@ -1833,14 +1834,14 @@ function formatColumn(row, [key, , formatter]) {
 }
 
 function playerStartYear(value) {
-  return value ? compactSeasonLabel(value) : 'Start pending';
+  return value ? compactSeasonLabel(value) : 'Insufficient data';
 }
 
 function playerEndYear(value, row) {
   if (row?.active && (value === null || value === undefined || Number(value) >= currentSeasonStartYear())) {
     return 'Present';
   }
-  return value ? compactSeasonLabel(value) : 'Final season pending';
+  return value ? compactSeasonLabel(value) : 'Insufficient data';
 }
 
 function teamEndYear(value) {
@@ -1848,21 +1849,21 @@ function teamEndYear(value) {
 }
 
 function careerRangeText(row) {
-  const start = row?.fromYear || 'Start pending';
+  const start = row?.fromYear || 'Insufficient data';
   if (row?.active && (row.toYear === null || row.toYear === undefined || Number(row.toYear) >= currentSeasonStartYear())) {
     return `${start} - Present`;
   }
   const finalYear = Number(row?.toYear);
-  return Number.isFinite(finalYear) ? `${start} - ${finalYear + 1}` : `${start} - Final season pending`;
+  return Number.isFinite(finalYear) ? `${start} - ${finalYear + 1}` : `${start} - Insufficient data`;
 }
 
 function seasonTeamText(rows) {
-  if (!rows?.length) return 'Team pending';
-  return rows.map((row) => cleanName(row.teamName)).filter(Boolean).join(' / ') || 'Team pending';
+  if (!rows?.length) return 'No games this season';
+  return rows.map((row) => cleanName(row.teamName)).filter(Boolean).join(' / ') || 'No games this season';
 }
 
 function readablePosition(value) {
-  if (!value) return 'Role pending';
+  if (!value) return 'Insufficient data';
   return String(value)
     .split('/')
     .map((part) => ({ G: 'Guard', F: 'Forward', C: 'Center' })[part] || part)
@@ -1870,7 +1871,7 @@ function readablePosition(value) {
 }
 
 function boxScorePosition(value, hasListedRoles = true) {
-  return value ? readablePosition(value) : hasListedRoles ? 'Bench' : 'Lineup pending';
+  return value ? readablePosition(value) : hasListedRoles ? 'Bench' : 'Insufficient data';
 }
 
 function playerGameTitle(row) {
@@ -1878,7 +1879,7 @@ function playerGameTitle(row) {
 }
 
 function playerGameMeta(row) {
-  const result = row.win === true ? 'Win' : row.win === false ? 'Loss' : 'Result pending';
+  const result = row.win === true ? 'Win' : row.win === false ? 'Loss' : 'Upcoming';
   return `${result} - ${teamScoreText(row)} - ${statCell(row.points)} PTS, ${statCell(row.rebounds)} REB, ${statCell(row.assists)} AST`;
 }
 
@@ -1892,7 +1893,7 @@ function gameMeta(row) {
 
 function scoreText(row) {
   if (row.homeScore === null || row.homeScore === undefined || row.awayScore === null || row.awayScore === undefined) {
-    return 'Score pending';
+    return 'Score not posted';
   }
   return `${scoreNumber(row.awayScore)}-${scoreNumber(row.homeScore)}`;
 }
@@ -1971,7 +1972,7 @@ function teamLogoUrl(teamId) {
 }
 
 function formatCell(value) {
-  if (value === null || value === undefined || value === '') return 'Pending';
+  if (value === null || value === undefined || value === '') return '';
   if (typeof value === 'number') return Number.isInteger(value) ? value : compactNumber(value, 2);
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) return formatDateTime(value);
@@ -1984,7 +1985,7 @@ function statCell(value) {
 }
 
 function scoreNumber(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'Pending';
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '0';
   return String(roundedNumber(value));
 }
 
@@ -1996,12 +1997,12 @@ function roundedNumber(value) {
 function resultText(value) {
   if (value === true) return 'Win';
   if (value === false) return 'Loss';
-  return 'Result pending';
+  return 'Upcoming';
 }
 
 function teamScoreText(row) {
   if (row.teamScore === null || row.teamScore === undefined || row.opponentScore === null || row.opponentScore === undefined) {
-    return 'Score pending';
+    return 'Score not posted';
   }
   return `${scoreNumber(row.teamScore)}-${scoreNumber(row.opponentScore)}`;
 }
@@ -2013,19 +2014,19 @@ function plusMinusText(value) {
 }
 
 function formatDateTime(value) {
-  if (!value) return 'Date pending';
+  if (!value) return 'Date TBD';
   return String(value).replace('T', ' ').replace(/\.\d+$/, '');
 }
 
 function formatMinuteDateTime(value) {
-  if (!value) return 'Date pending';
+  if (!value) return 'Date TBD';
   return formatDateTime(value).slice(0, 16);
 }
 
 function formatShortDate(value) {
-  if (!value) return 'Date pending';
+  if (!value) return 'Date TBD';
   const [date] = String(value).split('T');
-  return date || 'Date pending';
+  return date || 'Date TBD';
 }
 
 function currentSeasonStartYear() {

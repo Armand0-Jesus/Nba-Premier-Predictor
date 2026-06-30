@@ -97,6 +97,18 @@ describe('NBA Premier Predictor frontend', () => {
     expect(window.fetch.mock.calls.some(([url]) => String(url).includes('currentOnly=true'))).toBe(true);
   });
 
+  test('teams page uses natural empty copy', async () => {
+    window.fetch = vi.fn((path, options) => (
+      String(path).startsWith('/api/teams?') ? jsonResponse(page([])) : defaultFetch(path, options)
+    ));
+    window.history.pushState({}, '', '/teams');
+
+    render(<App />);
+
+    expect(await screen.findByText('No teams found')).toBeInTheDocument();
+    expect(screen.queryByText('No rows found')).not.toBeInTheDocument();
+  });
+
   test('team detail shows selected-season regular-season record', async () => {
     window.history.pushState({}, '', '/teams/1610612744');
 
@@ -109,14 +121,15 @@ describe('NBA Premier Predictor frontend', () => {
     expect(screen.queryByText('Through')).not.toBeInTheDocument();
   });
 
-  test('box score does not label everyone bench when lineup data is missing', async () => {
+  test('box score does not invent starters when lineup data is missing', async () => {
     window.history.pushState({}, '', '/games/12300001');
 
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: /Los Angeles Lakers at Golden State Warriors/i })).toBeInTheDocument();
-    expect(screen.getAllByText('Lineup pending').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Bench')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Insufficient data').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Starter')).not.toBeInTheDocument();
+    expect(screen.queryByText('Lineup pending')).not.toBeInTheDocument();
   });
 
   test('submits a player prediction through searchable choices', async () => {
