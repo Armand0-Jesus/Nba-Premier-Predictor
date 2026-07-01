@@ -17,11 +17,11 @@ public class AsyncJobService {
         this.sqsJobPublisher = sqsJobPublisher;
     }
 
-    public void publishModelEvaluation() {
-        sqsJobPublisher.publish("model_evaluation", Map.of("source", "spring_api"));
+    public boolean publishModelEvaluation() {
+        return sqsJobPublisher.publish("model_evaluation", Map.of("source", "spring_api"));
     }
 
-    public void publishModelRetraining(ModelRetrainRequest request) {
+    public boolean publishModelRetraining(ModelRetrainRequest request) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("source", "spring_api");
         payload.put("startSeason", request == null ? null : request.startSeason());
@@ -30,17 +30,17 @@ public class AsyncJobService {
         payload.put("trainRatio", request == null ? null : request.trainRatio());
         payload.put("recencyHalflifeDays", request == null ? null : request.recencyHalflifeDays());
         payload.put("triggeredBy", request == null ? null : request.normalizedTriggeredBy());
-        sqsJobPublisher.publish("model_retraining", payload);
+        return sqsJobPublisher.publish("model_retraining", payload);
     }
 
-    public void publishPredictionErrorRefresh() {
-        sqsJobPublisher.publish("prediction_error_refresh", Map.of("source", "spring_api"));
+    public boolean publishPredictionErrorRefresh() {
+        return sqsJobPublisher.publish("prediction_error_refresh", Map.of("source", "spring_api"));
     }
 
-    public void publishContextRefresh(String triggeredBy) {
+    public boolean publishContextRefresh(String triggeredBy) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("source", "spring_api");
         payload.put("triggeredBy", triggeredBy);
-        sqsJobPublisher.publish("context_refresh", payload);
+        return sqsJobPublisher.publish("context_refresh", payload);
     }
 }
