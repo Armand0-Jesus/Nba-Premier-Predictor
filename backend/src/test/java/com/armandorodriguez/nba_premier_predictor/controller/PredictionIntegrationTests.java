@@ -283,6 +283,17 @@ class PredictionIntegrationTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Candidate validation sample size is too small for promotion"));
 
+        Long missingSampleCandidateId = insertModelVersion(
+                "player-baseline-v2-missing-sample-test",
+                "player_stat_fantasy",
+                "candidate",
+                false);
+        insertMetricWithoutSample(missingSampleCandidateId, "projected_points", 2.2, 3.0);
+
+        mockMvc.perform(post("/api/model/promote/{modelVersionId}", missingSampleCandidateId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Candidate validation sample size is required for promotion"));
+
         assertThat(activeModelCount("player_stat_fantasy")).isZero();
     }
 
@@ -338,6 +349,31 @@ class PredictionIntegrationTests {
         assertThat(activeModelCount("game_score")).isZero();
         assertThat(registryStatusCount("rejected")).isEqualTo(2);
         assertThat(countRows("model_promotion_history")).isEqualTo(2);
+    }
+
+    @Test
+    void retrainRejectsCandidatesWhenValidationSampleIsMissing() throws Exception {
+        StubMlPredictionClient.missingSampleSize = true;
+
+        mockMvc.perform(post("/api/model/retrain")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "startSeason": 2023,
+                                  "endSeason": 2024,
+                                  "limit": 100,
+                                  "triggeredBy": "test"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.playerCandidate.promoted").value(false))
+                .andExpect(jsonPath("$.playerCandidate.reason").value("Candidate validation sample size was missing"))
+                .andExpect(jsonPath("$.gameScoreCandidate.promoted").value(false))
+                .andExpect(jsonPath("$.gameScoreCandidate.reason").value("Candidate validation sample size was missing"));
+
+        assertThat(activeModelCount("player_stat_fantasy")).isZero();
+        assertThat(activeModelCount("game_score")).isZero();
+        assertThat(registryStatusCount("rejected")).isEqualTo(2);
     }
 
     @Test
@@ -475,6 +511,14 @@ class PredictionIntegrationTests {
                 """, modelVersionId, targetVariable, mae, rmse, sampleSize);
     }
 
+    private void insertMetricWithoutSample(Long modelVersionId, String targetVariable, double mae, double rmse) {
+        jdbcTemplate.update("""
+                insert into model_metrics (
+                    model_version_id, target_variable, mae, rmse
+                ) values (?, ?, ?, ?)
+                """, modelVersionId, targetVariable, mae, rmse);
+    }
+
     private void insertRegistry(Long modelVersionId, String status) {
         jdbcTemplate.update(
                 "insert into model_registry (model_version_id, registry_status) values (?, ?)",
@@ -532,11 +576,13 @@ class PredictionIntegrationTests {
 
         static boolean missingMetrics;
         static boolean tinySample;
+        static boolean missingSampleSize;
         static boolean failTrainingForSmallData;
 
         static void reset() {
             missingMetrics = false;
             tinySample = false;
+            missingSampleSize = false;
             failTrainingForSmallData = false;
         }
 
@@ -594,14 +640,10 @@ class PredictionIntegrationTests {
             return Map.of(
                     "modelVersion", "player-baseline-v2",
                     "trainedRows", 30034,
-                    "playerBaseline", Map.of(
-                            "testRows", testRows,
-                            "metrics", Map.of(
-                                    "projected_points", Map.of("mae", 4.5, "rmse", 6.1, "hitRate", 0.72, "hitThreshold", 5))),
-                    "gameScoreBaseline", Map.of(
-                            "testRows", testRows,
-                            "metrics", Map.of(
-                                    "home_team_score", Map.of("mae", 9.5, "rmse", 12.4, "hitRate", 0.64, "hitThreshold", 10))));
+                    "playerBaseline", baselineSection(testRows, Map.of(
+                            "projected_points", Map.of("mae", 4.5, "rmse", 6.1, "hitRate", 0.72, "hitThreshold", 5))),
+                    "gameScoreBaseline", baselineSection(testRows, Map.of(
+                            "home_team_score", Map.of("mae", 9.5, "rmse", 12.4, "hitRate", 0.64, "hitThreshold", 10))));
         }
 
         @Override
@@ -659,6 +701,12 @@ class PredictionIntegrationTests {
                     0.76,
                     "medium",
                     List.of(Map.of("name", "last_5_points_avg", "value", 15.0)));
+        }
+
+        private static Map<String, Object> baselineSection(int testRows, Map<String, Object> metrics) {
+            return missingSampleSize
+                    ? Map.of("metrics", metrics)
+                    : Map.of("testRows", testRows, "metrics", metrics);
         }
     }
 }

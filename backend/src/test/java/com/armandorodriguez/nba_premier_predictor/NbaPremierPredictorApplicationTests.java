@@ -1,15 +1,14 @@
 package com.armandorodriguez.nba_premier_predictor;
 
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@ActiveProfiles("test")
-@SpringBootTest
+import org.junit.jupiter.api.Test;
+import org.springframework.scheduling.annotation.EnableScheduling;
+
 class NbaPremierPredictorApplicationTests {
 
-	@Test
-	void contextLoads() {
-	}
-
+    @Test
+    void applicationEnablesScheduledJobs() {
+        assertThat(NbaPremierPredictorApplication.class.isAnnotationPresent(EnableScheduling.class)).isTrue();
+    }
 }

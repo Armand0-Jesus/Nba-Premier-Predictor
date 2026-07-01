@@ -193,9 +193,11 @@ public class ModelMetadataService {
         Double candidateMae = averageMae(metrics);
         Integer sampleSize = minimumSampleSize(metrics);
         boolean hasMetrics = candidateMae != null;
-        boolean sampleTooSmall = sampleSize != null && sampleSize < MIN_VALIDATION_SAMPLE_SIZE;
-        boolean promoted = hasMetrics && !sampleTooSmall && (previousMae == null || candidateMae < previousMae);
-        String reason = promotionReason(promoted, hasMetrics, sampleTooSmall);
+        boolean hasSampleSize = sampleSize != null;
+        boolean sampleTooSmall = hasSampleSize && sampleSize < MIN_VALIDATION_SAMPLE_SIZE;
+        boolean promoted = hasMetrics && hasSampleSize && !sampleTooSmall
+                && (previousMae == null || candidateMae < previousMae);
+        String reason = promotionReason(promoted, hasMetrics, hasSampleSize, sampleTooSmall);
         if (promoted) {
             activateModel(modelVersionId, mlModelType, artifactPath, reason, previousActiveId, previousMae, candidateMae);
         } else {
@@ -228,7 +230,10 @@ public class ModelMetadataService {
         if (candidateMae == null) {
             throw new IllegalArgumentException("Candidate evaluation metrics are required before promotion");
         }
-        if (sampleSize != null && sampleSize < MIN_VALIDATION_SAMPLE_SIZE) {
+        if (sampleSize == null) {
+            throw new IllegalArgumentException("Candidate validation sample size is required for promotion");
+        }
+        if (sampleSize < MIN_VALIDATION_SAMPLE_SIZE) {
             throw new IllegalArgumentException("Candidate validation sample size is too small for promotion");
         }
         activateModel(modelVersionId, mlModelType, artifactPath, reason, previousActiveId, previousMae, candidateMae);
@@ -554,9 +559,12 @@ public class ModelMetadataService {
         return sampleSizes.isEmpty() ? null : sampleSizes.stream().mapToInt(Integer::intValue).min().orElseThrow();
     }
 
-    private static String promotionReason(boolean promoted, boolean hasMetrics, boolean sampleTooSmall) {
+    private static String promotionReason(boolean promoted, boolean hasMetrics, boolean hasSampleSize, boolean sampleTooSmall) {
         if (!hasMetrics) {
             return "Candidate evaluation metrics were missing";
+        }
+        if (!hasSampleSize) {
+            return "Candidate validation sample size was missing";
         }
         if (sampleTooSmall) {
             return "Candidate validation sample size was too small";
