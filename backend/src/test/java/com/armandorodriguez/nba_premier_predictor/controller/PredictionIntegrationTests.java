@@ -30,6 +30,7 @@ import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionRequest
 import com.armandorodriguez.nba_premier_predictor.dto.TeamScorePredictionResponse;
 import com.armandorodriguez.nba_premier_predictor.exception.MlServiceException;
 import com.armandorodriguez.nba_premier_predictor.service.MlPredictionClient;
+import com.armandorodriguez.nba_premier_predictor.service.PredictionExportService;
 
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
@@ -46,6 +47,7 @@ class PredictionIntegrationTests {
     @BeforeEach
     void resetStub() {
         StubMlPredictionClient.reset();
+        StubPredictionExportService.failExports = false;
     }
 
     @Test
@@ -68,6 +70,21 @@ class PredictionIntegrationTests {
                 .andExpect(jsonPath("$[0].predictionType").value("player_stat"))
                 .andExpect(jsonPath("$[0].projectedPoints").value(18.5))
                 .andExpect(jsonPath("$[0].modelVersion").value("player-baseline-v2"));
+    }
+
+    @Test
+    void predictionFlowStillSucceedsWhenCloudExportFails() throws Exception {
+        StubPredictionExportService.failExports = true;
+
+        mockMvc.perform(post("/api/predictions/player")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(playerRequestJson()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.predictionId").isNumber())
+                .andExpect(jsonPath("$.projectedPoints").value(18.5));
+
+        assertThat(countRows("predictions")).isEqualTo(1);
+        assertThat(countRows("player_stat_predictions")).isEqualTo(1);
     }
 
     @Test
@@ -569,6 +586,40 @@ class PredictionIntegrationTests {
         @Primary
         MlPredictionClient mlPredictionClient() {
             return new StubMlPredictionClient();
+        }
+
+        @Bean
+        @Primary
+        PredictionExportService predictionExportService() {
+            return new StubPredictionExportService();
+        }
+    }
+
+    static class StubPredictionExportService extends PredictionExportService {
+
+        static boolean failExports;
+
+        StubPredictionExportService() {
+            super(null);
+        }
+
+        @Override
+        public void exportPlayerPrediction(
+                String predictionType,
+                PlayerPredictionRequest request,
+                PlayerPredictionResponse response) {
+            if (failExports) {
+                throw new IllegalStateException("S3 export failed");
+            }
+        }
+
+        @Override
+        public void exportGameScorePrediction(
+                TeamScorePredictionRequest request,
+                TeamScorePredictionResponse response) {
+            if (failExports) {
+                throw new IllegalStateException("S3 export failed");
+            }
         }
     }
 

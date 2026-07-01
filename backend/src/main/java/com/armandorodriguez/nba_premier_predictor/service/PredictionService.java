@@ -6,6 +6,8 @@ import java.sql.Timestamp;
 import java.util.List;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -25,9 +27,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Service
 public class PredictionService {
 
+    private static final Logger log = LoggerFactory.getLogger(PredictionService.class);
+
     private final MlPredictionClient mlPredictionClient;
     private final ModelMetadataService modelMetadataService;
     private final PredictionCacheService predictionCacheService;
+    private final PredictionExportService predictionExportService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -35,11 +40,13 @@ public class PredictionService {
             MlPredictionClient mlPredictionClient,
             ModelMetadataService modelMetadataService,
             PredictionCacheService predictionCacheService,
+            PredictionExportService predictionExportService,
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper) {
         this.mlPredictionClient = mlPredictionClient;
         this.modelMetadataService = modelMetadataService;
         this.predictionCacheService = predictionCacheService;
+        this.predictionExportService = predictionExportService;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
     }
@@ -56,6 +63,7 @@ public class PredictionService {
         savePlayerStatPrediction(predictionId, response);
         PlayerPredictionResponse saved = response.withPredictionId(predictionId);
         cacheAfterCommit(fingerprint, saved);
+        exportAfterCommit(() -> predictionExportService.exportPlayerPrediction("player_stat", request, saved));
         return saved;
     }
 
@@ -71,6 +79,7 @@ public class PredictionService {
         saveFantasyPrediction(predictionId, response);
         PlayerPredictionResponse saved = response.withPredictionId(predictionId);
         cacheAfterCommit(fingerprint, saved);
+        exportAfterCommit(() -> predictionExportService.exportPlayerPrediction("fantasy", request, saved));
         return saved;
     }
 
@@ -86,6 +95,7 @@ public class PredictionService {
         saveTeamScorePrediction(predictionId, response);
         TeamScorePredictionResponse saved = response.withPredictionId(predictionId);
         cacheAfterCommit(fingerprint, saved);
+        exportAfterCommit(() -> predictionExportService.exportGameScorePrediction(request, saved));
         return saved;
     }
 
@@ -191,14 +201,28 @@ public class PredictionService {
         if (fingerprint == null) {
             return;
         }
+        afterCommit(() -> predictionCacheService.put(fingerprint, response));
+    }
+
+    private void exportAfterCommit(Runnable export) {
+        afterCommit(() -> {
+            try {
+                export.run();
+            } catch (RuntimeException ex) {
+                log.warn("Prediction export failed after commit", ex);
+            }
+        });
+    }
+
+    private void afterCommit(Runnable action) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            predictionCacheService.put(fingerprint, response);
+            action.run();
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                predictionCacheService.put(fingerprint, response);
+                action.run();
             }
         });
     }

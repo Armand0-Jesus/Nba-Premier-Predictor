@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.armandorodriguez.nba_premier_predictor.dto.ModelRetrainRequest;
+import com.armandorodriguez.nba_premier_predictor.service.AsyncJobService;
 import com.armandorodriguez.nba_premier_predictor.service.ModelMetadataService;
 import com.armandorodriguez.nba_premier_predictor.service.ModelMonitoringService;
 
@@ -20,10 +21,15 @@ public class ModelController {
 
     private final ModelMetadataService modelMetadataService;
     private final ModelMonitoringService modelMonitoringService;
+    private final AsyncJobService asyncJobService;
 
-    public ModelController(ModelMetadataService modelMetadataService, ModelMonitoringService modelMonitoringService) {
+    public ModelController(
+            ModelMetadataService modelMetadataService,
+            ModelMonitoringService modelMonitoringService,
+            AsyncJobService asyncJobService) {
         this.modelMetadataService = modelMetadataService;
         this.modelMonitoringService = modelMonitoringService;
+        this.asyncJobService = asyncJobService;
     }
 
     @GetMapping("/metrics")
@@ -63,16 +69,19 @@ public class ModelController {
 
     @PostMapping("/evaluate")
     public Map<String, Object> evaluate() {
+        asyncJobService.publishModelEvaluation();
         return modelMetadataService.evaluate();
     }
 
     @PostMapping("/prediction-errors/refresh")
     public Map<String, Object> refreshPredictionErrors() {
+        asyncJobService.publishPredictionErrorRefresh();
         return modelMonitoringService.refreshPredictionErrors();
     }
 
     @PostMapping("/retrain")
     public Map<String, Object> retrain(@RequestBody(required = false) ModelRetrainRequest request) {
+        asyncJobService.publishModelRetraining(request);
         return modelMetadataService.retrain(request);
     }
 

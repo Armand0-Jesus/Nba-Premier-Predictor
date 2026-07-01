@@ -26,6 +26,7 @@ import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.RosterSnapshot
 import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.RosterSnapshotResponse;
 import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.TransactionRequest;
 import com.armandorodriguez.nba_premier_predictor.dto.ContextDtos.TransactionResponse;
+import com.armandorodriguez.nba_premier_predictor.service.AsyncJobService;
 import com.armandorodriguez.nba_premier_predictor.service.ContextDataService;
 import com.armandorodriguez.nba_premier_predictor.service.ContextRefreshService;
 
@@ -36,15 +37,22 @@ public class ContextController {
 
     private final ContextDataService contextDataService;
     private final ContextRefreshService contextRefreshService;
+    private final AsyncJobService asyncJobService;
 
-    public ContextController(ContextDataService contextDataService, ContextRefreshService contextRefreshService) {
+    public ContextController(
+            ContextDataService contextDataService,
+            ContextRefreshService contextRefreshService,
+            AsyncJobService asyncJobService) {
         this.contextDataService = contextDataService;
         this.contextRefreshService = contextRefreshService;
+        this.asyncJobService = asyncJobService;
     }
 
     @PostMapping("/refresh")
     ContextRefreshResponse refreshContext() {
-        return contextRefreshService.refresh("manual_context_refresh");
+        String triggeredBy = "manual_context_refresh";
+        asyncJobService.publishContextRefresh(triggeredBy);
+        return contextRefreshService.refresh(triggeredBy);
     }
 
     @PostMapping("/rosters")

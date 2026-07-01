@@ -27,6 +27,38 @@ services:
       timeout: 3s
       retries: 10
 
+  localstack:
+    image: localstack/localstack:latest
+    container_name: nba-premier-localstack
+    environment:
+      SERVICES: s3,sqs,secretsmanager,ssm,logs
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:4566/_localstack/health >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  localstack-init:
+    image: localstack/localstack:latest
+    container_name: nba-premier-localstack-init
+    environment:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    entrypoint: ["/bin/sh", "/init/init-localstack.sh"]
+    volumes:
+      - ./localstack/init-localstack.sh:/init/init-localstack.sh:ro
+    depends_on:
+      localstack:
+        condition: service_healthy
+
   ml-service:
     build:
       context: ./ml-service
@@ -52,6 +84,13 @@ services:
       NBA_RATE_LIMIT_ENABLED: "true"
       NBA_PREDICTION_CACHE_ENABLED: "true"
       NBA_SEARCH_CACHE_ENABLED: "true"
+      NBA_AWS_ENABLED: "true"
+      NBA_AWS_ENDPOINT: http://localstack:4566
+      NBA_AWS_REGION: us-east-1
+      NBA_AWS_ACCESS_KEY_ID: test
+      NBA_AWS_SECRET_ACCESS_KEY: test
+      NBA_AWS_PREDICTION_REPORTS_BUCKET: nba-premier-prediction-reports
+      NBA_AWS_ASYNC_JOBS_QUEUE_URL: http://localstack:4566/000000000000/nba-premier-async-jobs
       NBA_IMPORT_ENABLED: ${NBA_IMPORT_ENABLED:-false}
       NBA_IMPORT_PATH: ${NBA_IMPORT_PATH:-/data/archive.zip}
     ports:
@@ -65,6 +104,8 @@ services:
         condition: service_healthy
       ml-service:
         condition: service_started
+      localstack-init:
+        condition: service_completed_successfully
 
   frontend:
     build:
@@ -80,3 +121,4 @@ services:
 
 volumes:
   postgres-data:
+  localstack-data:
