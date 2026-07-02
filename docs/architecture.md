@@ -68,7 +68,7 @@ flowchart TD
     report --> localS3[LocalStack S3]
 
     evaluate[Evaluate, retrain, context refresh or error refresh] --> job[SQS job message]
-    publishOnly[/api/jobs publish-only endpoints] --> job
+    publishOnly["/api/jobs publish-only endpoints"] --> job
     job --> localSqs[LocalStack SQS]
 ```
 
