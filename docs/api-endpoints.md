@@ -25,7 +25,7 @@ Season values use the NBA season start year. For example:
 - `2023` means the `2023-2024` NBA season
 - `2026` means the projected `2026-2027` season
 
-If deployed or gone into production at a serios level protect admin endpoints with authentication before exposing them publicly.
+If deployed or gone into production at a serious level protect admin endpoints with authentication before exposing them publicly.
 
 
 ## List of all endpoints
